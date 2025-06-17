@@ -1,11 +1,8 @@
 import axios from "axios";
 
-// Use environment variable or fallback to relative path for development
-const API_URL = import.meta.env.VITE_API_URL || "/api";
-
 // Create an Axios instance
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: "https://test-account.amdream.us/api",
   headers: {
     "Content-Type": "application/json",
     "Cache-Control": "no-cache, no-store, must-revalidate",
