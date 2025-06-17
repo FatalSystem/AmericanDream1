@@ -1,8 +1,11 @@
 import axios from "axios";
 
+// Use environment variable or fallback to relative path for development
+const API_URL = import.meta.env.VITE_API_URL || "/api";
+
 // Create an Axios instance
 const api = axios.create({
-  baseURL: "/api",
+  baseURL: API_URL,
   headers: {
     "Content-Type": "application/json",
     "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -27,11 +30,11 @@ api.interceptors.request.use(
       "Making request to:",
       config.url,
       "with method:",
-      config.method,
+      config.method
     );
     return config;
   },
-  (error) => Promise.reject(error),
+  (error) => Promise.reject(error)
 );
 
 // Add response interceptor to handle common errors
@@ -41,7 +44,7 @@ api.interceptors.response.use(
       "Received response from:",
       response.config.url,
       "with status:",
-      response.status,
+      response.status
     );
     return response;
   },
@@ -89,7 +92,7 @@ api.interceptors.response.use(
     }
 
     return Promise.reject(error);
-  },
+  }
 );
 
 export default api;
