@@ -2,7 +2,7 @@ import api from "../config";
 
 export const calendarApi = {
   createCalendar: async (eventData: any) => {
-    const response = await api.post("/calendar", eventData);
+    const response = await api.post("/calendar/events", eventData);
     return response.data;
   },
   

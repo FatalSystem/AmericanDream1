@@ -67,6 +67,7 @@ interface EventDetails {
   isNotAvailable?: boolean;
   rawEvent?: EventClickArg["event"];
   student_name_text?: string;
+  class_type: string;
 }
 
 // Use FullCalendar's native types
@@ -84,6 +85,7 @@ interface CustomEventInput extends EventInput {
     teacherId?: string;
     studentId?: string;
     class_status?: string;
+    class_type?: string;
   };
 }
 
@@ -92,6 +94,7 @@ type CalendarEvent = CustomEventInput & {
     teacherId?: string;
     studentId?: string;
     class_status?: string;
+    class_type?: string;
   };
 };
 
@@ -109,6 +112,14 @@ interface EventForm {
     weeks: number;
   };
 }
+
+const classTypes = [
+  { value: "trial", label: "Trial Lesson", duration: 30 },
+  { value: "regular", label: "Regular Lesson", duration: 50 },
+  { value: "instant", label: "Instant Lesson", duration: 50 },
+  { value: "group", label: "Group Lesson", duration: 50 },
+  { value: "training", label: "Training", duration: 50, adminOnly: true },
+];
 
 const Calendar: React.FC = () => {
   const { timezone } = useTimezone();
@@ -205,14 +216,10 @@ const Calendar: React.FC = () => {
     try {
       setLoading(true);
       const response = await api.get("/calendar/events");
-      let data = response.data;
-      // Логування для діагностики
-      console.log("EVENTS RESPONSE:", data);
-      let eventsArray: any[] = [];
-      if (Array.isArray(data)) eventsArray = data;
-      else if (Array.isArray(data.events)) eventsArray = data.events;
-      else if (data.events && Array.isArray(data.events.rows))
-        eventsArray = data.events.rows;
+      console.log("fetchEvents: raw backend response:", response.data);
+      let eventsArray = Array.isArray(response.data)
+        ? response.data
+        : response.data.events?.rows || [];
       const formattedEvents: CustomEventInput[] = eventsArray.map(
         (event: any) => {
           const startDate = dayjs(event.startDate || event.start).tz(timezone);
@@ -232,16 +239,16 @@ const Calendar: React.FC = () => {
                 event.teacherId || event.teacher_id || event.resourceId || ""
               ),
               class_status: event.class_status || "scheduled",
+              class_type: event.class_type || "",
             },
           };
         }
       );
+      console.log("fetchEvents: formatted events:", formattedEvents);
       setEvents(formattedEvents);
       setDisplayedEvents(formattedEvents);
     } catch (error) {
-      setEvents([]);
-      setDisplayedEvents([]);
-      console.error("Error fetching events:", error);
+      console.error("fetchEvents: error loading events:", error);
     } finally {
       setLoading(false);
     }
@@ -352,6 +359,20 @@ const Calendar: React.FC = () => {
     return brightness > 128 ? "#000000" : "#FFFFFF";
   };
 
+  // Add this function to format the event title with payment status
+  const formatEventTitle = (event: any) => {
+    let title = event.name || "";
+
+    // Add payment status indicator
+    if (event.payment_status === "reserved") {
+      title = `🔒 ${title}`; // Add lock emoji for reserved classes
+    } else if (event.payment_status === "paid") {
+      title = `✅ ${title}`; // Add checkmark for paid classes
+    }
+
+    return title;
+  };
+
   // Оновимо функцію рендерингу подій
   const renderEventContent = (eventInfo: any) => {
     const event = eventInfo.event;
@@ -367,6 +388,11 @@ const Calendar: React.FC = () => {
     // Форматуємо час
     const startTime = dayjs(event.start).format("HH:mm");
     const endTime = dayjs(event.end).format("HH:mm");
+
+    // Отримуємо тип уроку з extendedProps
+    const classType = event.extendedProps?.class_type || "";
+    const classTypeLabel =
+      classTypes.find((type) => type.value === classType)?.label || "";
 
     return (
       <div
@@ -396,9 +422,48 @@ const Calendar: React.FC = () => {
             fontWeight: "600",
             fontSize: "14px",
             letterSpacing: "-0.3px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "8px",
           }}
         >
-          {event.title}
+          <span>
+            {classTypeLabel
+              ? `${classTypeLabel} - ${formatEventTitle(event)}`
+              : formatEventTitle(event)}
+          </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleEventClick({ event } as EventClickArg);
+            }}
+            style={{
+              background: "rgba(255, 255, 255, 0.2)",
+              border: "none",
+              borderRadius: "4px",
+              padding: "2px 6px",
+              cursor: "pointer",
+              color: "#fff",
+              fontSize: "12px",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+            Edit
+          </button>
         </div>
         <div
           style={{
@@ -432,7 +497,7 @@ const Calendar: React.FC = () => {
     setAvailabilityForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleAddUnavailable = () => {
+  const handleAddUnavailable = async () => {
     if (
       !availabilityForm.teacherId ||
       !availabilityForm.date ||
@@ -446,50 +511,59 @@ const Calendar: React.FC = () => {
     const dateStr = availabilityForm.date.format("YYYY-MM-DD");
     const startStr = availabilityForm.startTime.format("HH:mm");
     const endStr = availabilityForm.endTime.format("HH:mm");
-    const start = `${dateStr}T${startStr}`;
-    const end = `${dateStr}T${endStr}`;
+    // Use dayjs.tz to create correct datetime in selected timezone
+    const start = dayjs.tz(`${dateStr}T${startStr}`, timezone).toISOString();
+    const end = dayjs.tz(`${dateStr}T${endStr}`, timezone).toISOString();
 
-    const newEvent: CustomEventInput = {
-      id: `unavailable-${Date.now()}`,
-      title: "Unavailable",
-      start,
-      end,
-      allDay: false,
-      description: "Unavailable time",
-      backgroundColor: "#ff4d4f",
-      resourceId: String(availabilityForm.teacherId),
-      teacherId: String(availabilityForm.teacherId),
-      extendedProps: {
-        teacherId: String(availabilityForm.teacherId),
+    try {
+      // Send to backend
+      await api.post("/calendar/events", {
+        teacher_id: availabilityForm.teacherId,
+        start_date: start,
+        end_date: end,
+        class_type: "unavailable",
         class_status: "scheduled",
-      },
-    };
-
-    setEvents((prev) => [...prev, newEvent]);
-    setIsAvailabilityModalOpen(false);
-    setAvailabilityForm({
-      teacherId: null,
-      date: null,
-      repeat: false,
-      startTime: null,
-      endTime: null,
-      repeatDays: [],
-      repeatWeeks: 1,
-    });
-    message.success("Unavailable time added to calendar");
+        payment_status: "reserved",
+        student_id: 0,
+        duration: dayjs(end).diff(dayjs(start), "minute"),
+        isUnavailable: true,
+        title: "Unavailable",
+      });
+      message.success("Unavailable time added to calendar");
+      setIsAvailabilityModalOpen(false);
+      setAvailabilityForm({
+        teacherId: null,
+        date: null,
+        repeat: false,
+        startTime: null,
+        endTime: null,
+        repeatDays: [],
+        repeatWeeks: 1,
+      });
+      fetchEvents();
+    } catch (error) {
+      message.error("Failed to save unavailable time");
+    }
   };
 
   const handleEventClick = (info: EventClickArg) => {
     console.log("Event clicked:", info.event);
     const event = info.event;
     const eventData = event.extendedProps;
+    const classType = eventData.class_type || eventData.type || "";
+    const classTypeLabel =
+      classTypes.find((type) => type.value === classType)?.label || "";
+
     setEventDetails({
       id: event.id,
-      title: event.title || "",
+      title: classTypeLabel
+        ? `${classTypeLabel} - ${event.title}`
+        : event.title,
       start: event.start?.toISOString() || "",
       end: event.end?.toISOString() || "",
       teacherId: eventData.teacherId,
       class_status: eventData.class_status,
+      class_type: classType,
       isNotAvailable:
         event.title?.includes("Not Available") ||
         event.title?.includes("Not A"),
@@ -546,8 +620,7 @@ const Calendar: React.FC = () => {
     { value: "Regular Lesson", label: "Regular Lesson" },
     { value: "Trial Lesson", label: "Trial Lesson" },
     { value: "Instant Lesson", label: "Instant Lesson" },
-    { value: "Unavailable", label: "Unavailable" },
-    { value: "Speaking Club", label: "Speaking Club" },
+    { value: "Group Lesson", label: "Group Lesson" },
   ];
 
   const durationOptions = [
@@ -617,6 +690,14 @@ const Calendar: React.FC = () => {
     fetchEvents();
   };
 
+  // Add a helper to get user role
+  function getUserRole() {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("user-role") || "teacher";
+    }
+    return "teacher";
+  }
+
   return (
     <div className="calendar-container with-sidebar">
       <div className="calendar-sidebar">
@@ -685,18 +766,29 @@ const Calendar: React.FC = () => {
         )}
       </div>
       <div className="calendar-main">
-        <div className="calendar-header">
+        <div
+          className="calendar-header"
+          style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 10,
+            background: "#1a1f2e",
+            padding: "8px 0 4px 0",
+            marginBottom: 0,
+          }}
+        >
           <Button
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setIsCreateModalOpen(true)}
-            style={{ marginRight: 12 }}
+            style={{ marginRight: 8, height: 36, fontSize: 15 }}
           >
             Create Event
           </Button>
           <Button
             type="default"
             onClick={() => setIsAvailabilityModalOpen(true)}
+            style={{ height: 36, fontSize: 15 }}
           >
             Availability
           </Button>
@@ -706,8 +798,12 @@ const Calendar: React.FC = () => {
           style={{
             background: "#1a1f2e",
             borderRadius: "12px",
-            padding: "20px",
+            padding: 0,
             boxShadow: "none",
+            height: "calc(100vh - 0px)",
+            minHeight: 400,
+            display: "flex",
+            flexDirection: "column",
           }}
         >
           <FullCalendar
@@ -724,6 +820,7 @@ const Calendar: React.FC = () => {
             selectMirror={true}
             dayMaxEvents={true}
             weekends={true}
+            firstDay={1}
             events={displayedEvents}
             eventClick={handleEventClick}
             select={handleDateSelect}
@@ -733,7 +830,7 @@ const Calendar: React.FC = () => {
             slotMaxTime="24:00:00"
             allDaySlot={false}
             slotDuration="00:30:00"
-            height={window.innerHeight - 200}
+            height="100%"
             eventDisplay="block"
             eventOverlap={false}
             slotEventOverlap={false}
@@ -751,6 +848,7 @@ const Calendar: React.FC = () => {
                   hour12: false,
                 },
                 slotMinWidth: 100,
+                firstDay: 1,
               },
               timeGridDay: {
                 titleFormat: {
@@ -876,6 +974,14 @@ const Calendar: React.FC = () => {
                   { value: "given", label: "Given" },
                   { value: "student_no_show", label: "Student No Show" },
                   { value: "cancelled", label: "Cancelled" },
+                  ...([
+                    "manager",
+                    "accountant",
+                    "administrator",
+                    "super_admin",
+                  ].includes(getUserRole())
+                    ? [{ value: "teacher_no_show", label: "Teacher not show" }]
+                    : []),
                 ]}
                 style={{ width: "100%" }}
               />
@@ -1081,22 +1187,61 @@ const Calendar: React.FC = () => {
           title="Event Details"
           open={isEventDetailsOpen}
           onCancel={() => setIsEventDetailsOpen(false)}
-          footer={[
-            <Button
-              key="delete"
-              danger
-              onClick={() => handleDeleteEvent(eventDetails?.id || "")}
+          footer={
+            <div
+              style={{
+                display: "flex",
+                gap: 12,
+                justifyContent: "center",
+                alignItems: "center",
+              }}
             >
-              Delete
-            </Button>,
-            <Button
-              key="save"
-              type="primary"
-              onClick={() => handleSaveEvent(eventDetails?.id || "")}
-            >
-              Save
-            </Button>,
-          ]}
+              <Button
+                key="edit"
+                type="default"
+                icon={
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    style={{ marginRight: 4 }}
+                  >
+                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                }
+                onClick={() => setIsEditingStatus(true)}
+                style={{
+                  fontWeight: 500,
+                  borderRadius: 6,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                Edit
+              </Button>
+              <Button
+                key="delete"
+                danger
+                onClick={() => handleDeleteEvent(eventDetails?.id || "")}
+                style={{ fontWeight: 500, borderRadius: 6 }}
+              >
+                Delete
+              </Button>
+              <Button
+                key="save"
+                type="primary"
+                onClick={() => handleSaveEvent(eventDetails?.id || "")}
+                style={{ fontWeight: 500, borderRadius: 6 }}
+              >
+                Save
+              </Button>
+            </div>
+          }
           width={400}
           centered
           className="availability-modal"
@@ -1116,9 +1261,19 @@ const Calendar: React.FC = () => {
               <div style={{ fontWeight: 500, marginBottom: "8px" }}>End:</div>
               <div>
                 {eventDetails &&
-                  dayjs(eventDetails.end)
-                    .tz(timezone)
-                    .format("DD.MM.YYYY, HH:mm")}
+                eventDetails.end &&
+                dayjs(eventDetails.end).isValid()
+                  ? dayjs(eventDetails.end)
+                      .tz(timezone)
+                      .format("DD.MM.YYYY, HH:mm")
+                  : eventDetails &&
+                    eventDetails.rawEvent &&
+                    eventDetails.rawEvent.end &&
+                    dayjs(eventDetails.rawEvent.end).isValid()
+                  ? dayjs(eventDetails.rawEvent.end)
+                      .tz(timezone)
+                      .format("DD.MM.YYYY, HH:mm")
+                  : "Невідомо"}
               </div>
             </div>
 
@@ -1143,29 +1298,23 @@ const Calendar: React.FC = () => {
                 Student:
               </div>
               <div>
-                {(() => {
-                  if (!eventDetails) return "";
-                  console.log("Full event details:", eventDetails);
-
-                  // Спробуємо знайти студента за title події або за groupId
-                  const eventTitle = eventDetails.rawEvent?.title || "";
-                  const groupId = eventDetails.rawEvent?._def?.groupId;
-
-                  console.log("Event title:", eventTitle);
-                  console.log("Group ID:", groupId);
-
-                  // Якщо є пряме ім'я студента в даних події, використовуємо його
-                  if (eventDetails.student_name_text) {
-                    return eventDetails.student_name_text;
-                  }
-
-                  // Якщо є title, можливо там є ім'я студента
-                  if (eventTitle && eventTitle !== "regular") {
-                    return eventTitle;
-                  }
-
-                  return "No student assigned";
-                })()}
+                {eventDetails && eventDetails.student_name_text
+                  ? eventDetails.student_name_text
+                  : eventDetails &&
+                    eventDetails.title &&
+                    !eventDetails.isNotAvailable
+                  ? eventDetails.title
+                      .replace(
+                        /^(Trial|Regular|Instant|Group|Trial Lesson|Regular Lesson|Instant Lesson|Group Lesson)\s*-\s*/gi,
+                        ""
+                      )
+                      .replace(
+                        /^(Trial|Regular|Instant|Group|Trial Lesson|Regular Lesson|Instant Lesson|Group Lesson)\s*-\s*/gi,
+                        ""
+                      )
+                      .replace(/^-+/, "")
+                      .trim()
+                  : "—"}
               </div>
             </div>
 
@@ -1185,6 +1334,17 @@ const Calendar: React.FC = () => {
                 style={{ width: "100%" }}
                 disabled={eventDetails?.isNotAvailable}
               />
+            </div>
+
+            <div style={{ marginBottom: "20px" }}>
+              <div style={{ fontWeight: 500, marginBottom: "8px" }}>
+                Lesson Type:
+              </div>
+              <div>
+                {eventDetails && eventDetails.class_type
+                  ? eventDetails.class_type
+                  : "Not specified"}
+              </div>
             </div>
           </div>
         </Modal>

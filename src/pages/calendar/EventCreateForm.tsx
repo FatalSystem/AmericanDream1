@@ -49,23 +49,6 @@ const weekDays = [
   { value: "sunday", label: "Sun" },
 ];
 
-function getUserRole() {
-  if (typeof window !== "undefined") {
-    return localStorage.getItem("user-role") || "teacher";
-  }
-  return "teacher";
-}
-
-const lessonStatusOptions: { value: LessonStatus; label: string }[] = [
-  { value: "scheduled", label: "Scheduled" },
-  { value: "completed", label: "Given" },
-  { value: "cancelled", label: "Cancelled" },
-  { value: "student_no_show", label: "Student No Show" },
-  ...(getUserRole() === "manager"
-    ? [{ value: "teacher_no_show" as LessonStatus, label: "No Show Teacher" }]
-    : []),
-];
-
 // Mock students and groups
 const mockGroups = [
   { id: 1, name: "Group A" },
@@ -81,6 +64,13 @@ function formatDateTimeEU(dt: string) {
   } catch {
     return dt;
   }
+}
+
+function getUserRole() {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("user-role") || "teacher";
+  }
+  return "teacher";
 }
 
 export default function EventCreateForm({
@@ -140,6 +130,29 @@ export default function EventCreateForm({
   const [students, setStudents] = useState<Student[]>([]);
   const [studentSearch, setStudentSearch] = useState("");
 
+  // Add a separate state for end input display
+  const [endInput, setEndInput] = useState(
+    defaultEnd ? defaultEnd.toISOString().slice(0, 16) : ""
+  );
+
+  // Always recalculate lessonStatusOptions based on current userRole
+  const lessonStatusOptions: { value: LessonStatus; label: string }[] = [
+    { value: "scheduled", label: "Scheduled" },
+    { value: "completed", label: "Given" },
+    { value: "cancelled", label: "Cancelled" },
+    { value: "student_no_show", label: "Student No Show" },
+    ...(["manager", "accountant", "administrator", "super_admin"].includes(
+      userRole
+    )
+      ? [
+          {
+            value: "teacher_no_show" as LessonStatus,
+            label: "Teacher not show",
+          },
+        ]
+      : []),
+  ];
+
   useEffect(() => {
     async function fetchStudents() {
       try {
@@ -172,11 +185,12 @@ export default function EventCreateForm({
 
   useEffect(() => {
     if (start && duration) {
-      const startDate = new Date(start);
-      const endDate = new Date(startDate.getTime() + duration * 60000);
-      setEnd(endDate.toISOString().slice(0, 16));
+      const startDate = DateTime.fromISO(start, { zone: timezone });
+      const endDate = startDate.plus({ minutes: duration });
+      setEnd(endDate.toISO()); // for event data (ISO)
+      setEndInput(endDate.toFormat("yyyy-MM-dd'T'HH:mm")); // for input field
     }
-  }, [start, duration]);
+  }, [start, duration, timezone]);
 
   useEffect(() => {
     const selectedType = classTypes.find((type) => type.value === classType);
@@ -294,8 +308,8 @@ export default function EventCreateForm({
           class_type: classType,
           student_id: 0,
           teacher_id: parseInt(String(teacherId)),
-          class_status: "scheduled" as LessonStatus,
-          payment_status: "reserved" as PaymentStatus,
+          class_status: "scheduled",
+          payment_status: "reserved",
           start_date: startUTC,
           end_date: endUTC,
           duration: Number(duration),
@@ -303,7 +317,9 @@ export default function EventCreateForm({
         };
         await calendarApi.createCalendar(eventData);
         onClose();
-        if (onSuccess) onSuccess(eventData);
+        if (onSuccess) {
+          onSuccess(eventData);
+        }
       } catch (err) {
         setError(
           err instanceof Error
@@ -352,17 +368,6 @@ export default function EventCreateForm({
     }
 
     try {
-      console.log("Submitting form with data:", {
-        classType,
-        studentId,
-        teacherId,
-        classStatus,
-        paymentStatus: paymentStatusToUse,
-        start,
-        end,
-        duration,
-      });
-
       // Convert start and end to UTC using selected timezone
       const startUTC =
         DateTime.fromISO(start, { zone: timezone }).toUTC().toISO() || "";
@@ -377,23 +382,18 @@ export default function EventCreateForm({
             : parseInt(studentId),
         teacher_id: parseInt(String(teacherId)),
         class_status: classStatus,
-        payment_status: paymentStatusToUse as PaymentStatus,
+        payment_status: paymentStatusToUse,
         start_date: startUTC,
         end_date: endUTC,
         duration: Number(duration),
       };
 
-      console.log("Sending event data to backend:", eventData);
-
-      const result = await calendarApi.createCalendar(eventData);
-      console.log("Event created successfully:", result);
-
+      await calendarApi.createCalendar(eventData);
       onClose();
       if (onSuccess) {
         onSuccess(eventData);
       }
     } catch (err) {
-      console.error("Error creating event:", err);
       setError(err instanceof Error ? err.message : "Failed to create event");
     } finally {
       setLoading(false);
@@ -797,6 +797,24 @@ export default function EventCreateForm({
               </div>
             </>
           )}
+        </div>
+      </div>
+
+      {/* End Time */}
+      <div className="flex gap-4">
+        <div className="flex-1">
+          <label className="label">End Time</label>
+          <input
+            className="input"
+            type="datetime-local"
+            value={endInput}
+            onChange={(e) => setEndInput(e.target.value)}
+            required
+            disabled
+          />
+          <div style={{ color: "#2563eb", fontSize: 13, marginTop: 4 }}>
+            {formatDateTimeEU(endInput)}
+          </div>
         </div>
       </div>
     </form>
