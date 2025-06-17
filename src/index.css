@@ -1,0 +1,591 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+thead .ant-table-cell {
+  background-color: #343d55 !important;
+  color: #b4b7bd !important;
+}
+tbody .ant-table-cell {
+  background-color: #4b536b !important;
+  color: #b4b7bd !important;
+}
+
+.custom-table .ant-table-body {
+  overflow-y: auto !important;
+  border-radius: 5px !important;
+}
+
+.custom-table .ant-table-body::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-table .ant-table-body::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.custom-table .ant-table-body::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.custom-table .ant-table-body::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* For Firefox */
+.custom-table .ant-table-body {
+  scrollbar-width: thin;
+  scrollbar-color: #888 #f1f1f1;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .custom-table .ant-table-body::-webkit-scrollbar-track {
+    background: #1f2937;
+  }
+
+  .custom-table .ant-table-body::-webkit-scrollbar-thumb {
+    background: #4b5563;
+  }
+
+  .custom-table .ant-table-body::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+  }
+
+  .custom-table .ant-table-body {
+    scrollbar-color: #4b5563 #1f2937;
+  }
+}
+
+/* Input placeholder styles */
+.ant-input::placeholder,
+.ant-picker-input > input::placeholder,
+.ant-select-selection-placeholder,
+.ant-input-number-input::placeholder,
+.ant-input-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.ant-picker-input {
+  background-color: #1a222d !important;
+  input {
+    color: white !important;
+  }
+}
+.ant-picker {
+  background-color: #1a222d !important;
+}
+.anticon-swap-right {
+  color: white !important;
+}
+
+/* For Ant Design Select placeholder */
+.ant-select-selection-placeholder {
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+/* For TextArea placeholder */
+textarea::placeholder {
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+/* For DatePicker placeholder */
+.ant-picker-input > input::placeholder {
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+/* For focused states */
+.ant-input:focus::placeholder,
+.ant-picker-input > input:focus::placeholder,
+.ant-input-number-input:focus::placeholder,
+.ant-input-textarea:focus::placeholder {
+  opacity: 0.8;
+}
+
+/* For Firefox */
+.ant-input:-moz-placeholder,
+.ant-picker-input > input:-moz-placeholder,
+.ant-input-number-input:-moz-placeholder,
+.ant-input-textarea:-moz-placeholder {
+  color: rgba(255, 255, 255, 0.6) !important;
+  opacity: 1;
+}
+
+.custom-table .ant-table {
+  background: transparent;
+}
+
+.custom-table .ant-table-thead > tr > th {
+  background: #1e293b !important;
+  color: white !important;
+  border-bottom: 1px solid #334155 !important;
+}
+
+.custom-table .ant-table-tbody > tr > td {
+  background: #0f172a !important;
+  color: #94a3b8 !important;
+  border-bottom: 1px solid #1e293b !important;
+}
+
+.custom-table .ant-table-tbody > tr:hover > td {
+  background: #1e293b !important;
+}
+
+.custom-table .ant-table {
+  border: 1px solid #334155 !important;
+}
+
+.custom-table .ant-table-container {
+  border: 1px solid #334155 !important;
+}
+
+.custom-table .ant-table-cell {
+  border-right: 1px solid #334155 !important;
+  border-bottom: 1px solid #334155 !important;
+}
+
+.custom-table .ant-table-thead > tr > th {
+  border-right: 1px solid #334155 !important;
+  border-bottom: 1px solid #334155 !important;
+}
+
+.custom-table .ant-table-tbody > tr > td {
+  border-right: 1px solid #334155 !important;
+  border-bottom: 1px solid #334155 !important;
+}
+
+.custom-table .ant-table-column-sorter {
+  color: white !important;
+}
+
+.custom-table .ant-table-filter-trigger {
+  color: white !important;
+}
+
+/* Make the filter dropdown icon and active state white */
+.custom-table .anticon-filter,
+.custom-table .ant-table-filter-trigger.active {
+  color: white !important;
+}
+
+/* Style the sort icons (up/down arrows) */
+.custom-table .ant-table-column-sorter-up,
+.custom-table .ant-table-column-sorter-down {
+  color: white !important;
+}
+
+/* Make active sort icons more visible */
+.custom-table .ant-table-column-sorter-up.active,
+.custom-table .ant-table-column-sorter-down.active {
+  color: #1677ff !important;
+}
+
+.custom-pagination {
+  margin-top: 16px !important;
+}
+
+.custom-table .ant-table-pagination {
+  margin: 16px 0 !important;
+}
+
+@media (max-width: 640px) {
+  .custom-pagination {
+    margin-top: 12px !important;
+  }
+
+  .custom-table .ant-table-pagination {
+    margin: 12px 0 !important;
+  }
+}
+
+.ant-table .ant-btn-text:hover {
+  background-color: #334155 !important;
+}
+
+.ant-table .ant-btn-text:hover .anticon-edit {
+  color: #1677ff !important;
+}
+
+.ant-table .ant-btn-text:hover .anticon-delete {
+  color: #dc2626 !important;
+}
+
+.ant-switch {
+  background-color: #1e293b !important;
+}
+.ant-switch-checked {
+  background: #1677ff !important;
+}
+.ant-empty-description {
+  color: white !important;
+}
+
+.ant-picker-panel {
+  background: transparent !important;
+}
+
+.ant-picker-content {
+  th {
+    color: gray !important;
+  }
+}
+
+.dark-calendar .ant-picker-calendar-date {
+  color: white;
+  background: #1b1b1b;
+}
+
+.dark-calendar .ant-picker-calendar-date-value {
+  color: white;
+}
+
+.dark-calendar .ant-picker-calendar-date-today {
+  background: #2b2b2b;
+}
+
+.dark-calendar .ant-picker-calendar-date-selected {
+  background: #177ddc;
+}
+
+.dark-calendar .ant-picker-calendar-cell {
+  color: white;
+}
+
+.dark-calendar .ant-picker-calendar-date:hover {
+  background: #2b2b2b;
+}
+
+.dark-calendar .ant-picker-calendar-date-disabled {
+  color: rgba(255, 255, 255, 0.25);
+  background: #1b1b1b;
+}
+
+.rbc-toolbar button {
+  color: gray !important;
+}
+
+.rbc-toolbar button:hover {
+  background-color: #555 !important;
+}
+.rbc-toolbar-label {
+  color: gray;
+  text-align: left;
+  font-size: 24px;
+}
+
+.rbc-active {
+  background-color: #334155 !important;
+}
+
+.rbc-button-link {
+  color: gray !important;
+}
+.rbc-header {
+  color: gray !important;
+  font-size: 20px !important;
+}
+.rbc-off-range-bg {
+  background-color: #2b2b2b !important;
+}
+.rbc-month-view {
+  border-radius: 12px !important;
+}
+.rbc-time-view {
+  border-radius: 12px !important;
+}
+.rbc-time-view .rbc-time-gutter {
+  border-radius: 12px !important;
+}
+.rbc-time-view .rbc-time-gutter .rbc-time-column {
+  border-radius: 12px !important;
+}
+
+.rbc-calendar {
+  .rbc-day-bg {
+    border: 1px solid gray !important;
+  }
+}
+
+.rbc-label {
+  color: gray;
+}
+
+.rbc-today {
+  background-color: #b4b7bd !important;
+}
+
+.ant-drawer-content {
+  background-color: #1a222d !important;
+  color: white;
+}
+
+.ant-drawer-close {
+  color: white !important;
+}
+
+@layer components {
+  .sidebar-item-hover {
+    @apply transition-all duration-200 hover:pl-4;
+  }
+
+  .backdrop-blur {
+    backdrop-filter: blur(8px);
+  }
+}
+
+/* Override Ant Design input placeholder styles */
+.ant-input::placeholder {
+  color: rgba(107, 114, 128, 0.8) !important; /* gray-500 with opacity */
+}
+
+.ant-input-password input::placeholder {
+  color: rgba(107, 114, 128, 0.8) !important;
+}
+
+.ant-select-selection-placeholder {
+  color: rgba(107, 114, 128, 0.8) !important;
+}
+
+/* Dark mode overrides */
+.dark .ant-input::placeholder,
+.dark .ant-input-password input::placeholder,
+.dark .ant-select-selection-placeholder {
+  color: rgba(
+    156,
+    163,
+    175,
+    0.8
+  ) !important; /* gray-400 with opacity for dark mode */
+}
+
+.ant-card {
+  background-color: #1a222d !important;
+  color: white !important;
+}
+
+.custom-drawer .ant-drawer-header {
+  background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+  color: white;
+  z-index: 150;
+}
+
+.custom-drawer .ant-drawer-title {
+  color: white;
+}
+
+.custom-drawer .ant-drawer-close {
+  color: white;
+}
+
+@media (max-width: 640px) {
+  .custom-drawer .ant-drawer-content-wrapper {
+    width: 100% !important;
+  }
+}
+
+.ant-drawer {
+  z-index: 500 !important;
+}
+
+.calendar-modal {
+  .ant-modal-content {
+    background: #1c1c1c !important;
+  }
+
+  .ant-modal-header {
+    background: #1c1c1c !important;
+    .ant-modal-title {
+      color: white !important;
+    }
+  }
+  .ant-modal-close-icon {
+    svg {
+      color: white !important;
+    }
+  }
+}
+
+.time-range-modal {
+  .ant-modal-content {
+    background: #1a222d !important;
+  }
+
+  .ant-modal-header {
+    background: #1a222d !important;
+    .ant-modal-title {
+      color: white !important;
+    }
+  }
+  .ant-modal-close-icon {
+    svg {
+      color: white !important;
+    }
+  }
+}
+
+.ant-picker-ok {
+  button {
+    background-color: #1677ff !important;
+  }
+}
+
+.ant-checkbox-label {
+  color: white !important;
+}
+
+/* Stripe Modal Styling */
+.stripe-modal .modal-content {
+  max-width: 1024px !important;
+  background-color: #0f172a !important;
+  height: fit-content !important;
+  max-height: 90vh !important;
+  overflow: hidden !important;
+}
+
+.stripe-modal .modal-header,
+.stripe-modal .modal-body,
+.stripe-modal .modal-footer {
+  background-color: #0f172a !important;
+}
+
+.stripe-container {
+  margin: 0 auto;
+  overflow: visible !important;
+  background-color: #0f172a !important;
+  min-height: 400px;
+}
+
+/* Desktop overrides for the Stripe modal */
+@media (min-width: 1024px) {
+  .stripe-modal .modal-body {
+    display: flex;
+    flex-direction: column;
+    height: auto !important;
+    max-height: 80vh !important;
+    overflow: hidden !important;
+  }
+  
+  .stripe-container {
+    overflow: hidden !important;
+    height: 100% !important;
+  }
+  
+  stripe-pricing-table {
+    max-height: calc(80vh - 120px) !important;
+    overflow: visible !important;
+  }
+  
+  .fixed-button-container {
+    position: relative;
+    bottom: 0;
+    right: 0;
+    padding: 1rem 0;
+    background-color: #0f172a;
+    width: 100%;
+    z-index: 10;
+    margin-top: auto;
+  }
+}
+
+/* Mobile/tablet adjustments */
+@media (max-width: 1023px) {
+  .stripe-modal .modal-content {
+    width: 95% !important;
+    max-width: 95% !important;
+    margin: 10px auto;
+    max-height: 90vh !important;
+  }
+  
+  .stripe-modal .modal-body {
+    max-height: 80vh !important;
+    overflow-y: auto !important;
+    padding-bottom: 70px !important; /* Space for the fixed button */
+  }
+  
+  .stripe-container {
+    min-height: 400px !important;
+  }
+  
+  .fixed-button-container {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 0.75rem 1.5rem;
+    background-color: #0f172a;
+    border-top: 1px solid #334155;
+    box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1);
+    z-index: 50;
+    display: flex;
+    justify-content: flex-end;
+  }
+}
+
+/* Ensure buttons in the stripe component are visible */
+stripe-pricing-table {
+  --stripe-elements-border-color: #d1d5db;
+  --stripe-elements-border-radius: 8px;
+  --stripe-elements-spacing-unit: 12px;
+}
+
+.stripe-wrapper {
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+}
+
+/* Custom Delete Modal Styling */
+.recurring-delete-modal .ant-modal-content {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
+  border: 1px solid #374151 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+}
+
+.recurring-delete-modal .ant-modal-header {
+  background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%) !important;
+  border-bottom: 1px solid #374151 !important;
+  border-radius: 12px 12px 0 0 !important;
+  padding: 16px 24px !important;
+}
+
+.recurring-delete-modal .ant-modal-title {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+.recurring-delete-modal .ant-modal-close {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 6px !important;
+  transition: all 0.2s ease !important;
+}
+
+.recurring-delete-modal .ant-modal-close:hover {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.2) !important;
+}
+
+.recurring-delete-modal .ant-modal-body {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
+  color: #e5e7eb !important;
+  padding: 24px !important;
+}
+
+.recurring-delete-modal .ant-modal-footer {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
+  border-top: 1px solid #374151 !important;
+  border-radius: 0 0 12px 12px !important;
+  padding: 16px 24px !important;
+}
+
+/* Button hover effects for the custom modals */
+.recurring-delete-modal .ant-btn:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}

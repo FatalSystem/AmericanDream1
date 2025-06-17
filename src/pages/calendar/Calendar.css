@@ -1,0 +1,588 @@
+.calendar-container {
+  padding: 24px;
+  background: #181f2a;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(20, 25, 34, 0.5);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 20px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #232b39;
+  box-shadow: 0 1px 4px rgba(20, 25, 34, 0.3);
+}
+
+.calendar-wrapper {
+  flex: 1;
+  min-height: 800px;
+  position: relative;
+  background: #1a1f2e;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+/* Основні стилі календаря */
+.fc {
+  background: #1a1f2e;
+  height: 100%;
+  font-family: inherit;
+  color: #e5e7eb;
+}
+
+/* Стилі для подій */
+.fc-event {
+  border: none !important;
+  background: none !important;
+  padding: 0 !important;
+  margin: 1px 0 !important;
+}
+
+.fc-event-main-frame {
+  padding: 0 !important;
+}
+
+.fc-event-time {
+  display: none !important; /* Ми показуємо час в нашому власному форматі */
+}
+
+/* Стилі для часової сітки */
+.fc-timegrid-slots td {
+  height: 40px !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.fc-timegrid-slot-label {
+  color: #8b92a5 !important;
+  font-size: 12px !important;
+}
+
+/* Стилі для заголовків */
+.fc-toolbar-title {
+  color: #fff !important;
+  font-size: 20px !important;
+  font-weight: 600 !important;
+}
+
+.fc-col-header-cell-cushion {
+  color: #60a5fa !important;
+  font-weight: 500 !important;
+  padding: 8px !important;
+}
+
+/* Стилі для кнопок */
+.fc-button {
+  background: #2563eb !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 8px 16px !important;
+  font-weight: 500 !important;
+}
+
+.fc-button:hover {
+  background: #1d4ed8 !important;
+}
+
+.fc-button-active {
+  background: #1e40af !important;
+}
+
+/* Прибираємо зайві бордери */
+.fc-scrollgrid {
+  border: none !important;
+}
+
+.fc-scrollgrid td, 
+.fc-scrollgrid th {
+  border-right: none !important;
+}
+
+.fc td, .fc th {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Стилі для сьогоднішнього дня */
+.fc .fc-day-today {
+  background: rgba(37, 99, 235, 0.1) !important;
+}
+
+/* Стилі для подій в тижневому та денному режимі */
+.fc-timegrid-event {
+  min-height: 30px !important;
+  margin: 1px 0 !important;
+}
+
+/* Прибираємо фон для подій */
+.fc-v-event {
+  background: none !important;
+  border: none !important;
+}
+
+/* FullCalendar dark styles */
+.fc .fc-toolbar {
+  padding: 16px;
+  margin: 0 !important;
+  border-bottom: 1px solid #2c3647;
+  background: transparent;
+  border-radius: 12px 12px 0 0;
+}
+
+.fc .fc-toolbar-title {
+  font-size: 1.25rem !important;
+  font-weight: 600;
+  color: #fff;
+}
+
+.fc .fc-button {
+  padding: 6px 16px;
+  font-weight: 500;
+  border-radius: 8px;
+  transition: all 0.2s;
+  background: #2563eb;
+  border: none;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.08);
+}
+
+.fc .fc-button-primary {
+  background-color: #2563eb;
+  border-color: #2563eb;
+}
+
+.fc .fc-button-primary:hover,
+.fc .fc-button-primary:focus {
+  background-color: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+
+.fc .fc-button-primary:not(:disabled).fc-button-active {
+  background-color: #1e40af;
+  border-color: #1e40af;
+}
+
+.fc .fc-daygrid-day {
+  border: 1px solid #2c3647;
+  background: #232b39;
+}
+
+.fc .fc-daygrid-day-number {
+  padding: 18px 8px;
+  color: #60a5fa;
+  font-weight: 500;
+}
+
+.fc .fc-event {
+  border-radius: 8px;
+  border: none;
+  padding: 4px 10px;
+  font-size: 0.95rem;
+  background: #334155;
+  color: #60a5fa;
+  font-weight: 500;
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.08);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.fc .fc-event:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+  background: #2563eb;
+  color: #fff;
+}
+
+.fc .fc-col-header-cell {
+  background: #181f2a;
+  color: #60a5fa;
+  font-weight: 500;
+}
+
+.fc .fc-day-today {
+  background-color: #1e293b !important;
+}
+
+.fc .fc-day-other {
+  background-color: #232b39;
+}
+
+.fc .fc-daygrid-day.fc-day-today {
+  background-color: #232b39;
+}
+
+.fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-frame {
+  background-color: #1e293b;
+  position: relative;
+}
+
+.fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-frame::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border: 2px solid #2563eb;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-frame::after {
+  content: 'Today';
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-size: 0.75rem;
+  color: #2563eb;
+  font-weight: 500;
+}
+
+/* Modal styles */
+.create-event-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+}
+
+.create-event-modal .ant-modal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  padding: 0;
+  max-height: 90vh;
+  overflow-y: auto;
+  z-index: 1001;
+}
+
+.create-event-modal .ant-modal-content {
+  border-radius: 16px;
+  background: #232b39;
+  box-shadow: 0 8px 32px rgba(20, 25, 34, 0.5);
+  padding: 0;
+  border: none;
+}
+
+.create-event-modal .ant-modal-header {
+  background: #232b39;
+  border-bottom: 1px solid #2c3647;
+  padding: 24px 32px 0 32px;
+  border-radius: 16px 16px 0 0;
+}
+
+.create-event-modal .ant-modal-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.5px;
+}
+
+.create-event-modal .ant-modal-body {
+  padding: 32px;
+  color: #e5e7eb;
+  background: #232b39;
+}
+
+.create-event-modal .ant-btn-primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+  font-weight: 600;
+  border-radius: 8px;
+  height: 40px;
+  min-width: 100px;
+  font-size: 16px;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);
+  transition: background 0.2s;
+}
+.create-event-modal .ant-btn-primary:hover,
+.create-event-modal .ant-btn-primary:focus {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.create-event-modal .ant-btn-default {
+  background: #2c3647;
+  color: #e5e7eb;
+  border: none;
+  font-weight: 600;
+  border-radius: 8px;
+  height: 40px;
+  min-width: 100px;
+  font-size: 16px;
+  margin-right: 12px;
+}
+.create-event-modal .ant-btn-default:hover,
+.create-event-modal .ant-btn-default:focus {
+  background: #374151;
+  color: #fff;
+}
+
+.create-event-modal .ant-select-selector,
+.create-event-modal .ant-input,
+.create-event-modal .ant-picker,
+.create-event-modal .ant-picker-input > input {
+  background: #181f2a !important;
+  color: #e5e7eb !important;
+  border: 1px solid #2c3647 !important;
+  border-radius: 8px !important;
+  min-height: 40px;
+  font-size: 16px;
+  transition: border 0.2s;
+}
+
+.ant-picker-suffix svg,
+.ant-modal-close-x svg {
+  fill: #fff;
+}
+
+.ant-picker-input input {
+  border: none!important;
+}
+
+.ant-picker-input input:focus {
+  outline: none;
+}
+
+.create-event-modal .ant-select-selector:focus,
+.create-event-modal .ant-input:focus,
+.create-event-modal .ant-picker-focused,
+.create-event-modal .ant-picker-input > input:focus {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.08);
+  background: #181f2a !important;
+  color: #e5e7eb !important;
+}
+
+.create-event-modal .ant-select-dropdown,
+.create-event-modal .ant-picker-dropdown {
+  background: #232b39 !important;
+  color: #e5e7eb !important;
+}
+
+.create-event-modal .ant-select-item-option,
+.create-event-modal .ant-picker-cell-inner {
+  color: #e5e7eb !important;
+}
+
+.create-event-modal .ant-select-item-option-selected,
+.create-event-modal .ant-select-item-option-active,
+.create-event-modal .ant-picker-cell-selected .ant-picker-cell-inner {
+  background: #2563eb !important;
+  color: #fff !important;
+}
+
+.create-event-modal .ant-input[disabled],
+.create-event-modal .ant-select-disabled .ant-select-selector {
+  background: #232b39 !important;
+  color: #888 !important;
+  opacity: 0.7;
+}
+.with-sidebar {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+}
+.calendar-sidebar {
+  width: 240px;
+  background: #232b39;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(20, 25, 34, 0.2);
+  margin-right: 32px;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-height: 600px;
+}
+.sidebar-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 18px;
+  color: #fff;
+}
+.teacher-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+}
+.teacher-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 14px;
+  font-size: 16px;
+  font-weight: 500;
+  color: #e5e7eb;
+}
+.teacher-color {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  margin-right: 12px;
+  border: 2px solid #334155;
+}
+.teacher-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.calendar-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.custom-event {
+  white-space: normal;
+}
+.availability-modal .ant-modal-content {
+  border-radius: 16px;
+  background: #232b39;
+  box-shadow: 0 8px 32px rgba(20, 25, 34, 0.5);
+  padding: 0;
+  border: none;
+}
+
+.availability-modal .ant-modal-content label {
+  color: #e5e7eb!important;
+  font-weight: 500;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.availability-modal .ant-modal-header {
+  background: #232b39;
+  border-bottom: 1px solid #2c3647;
+  padding: 24px 32px 0 32px;
+  border-radius: 16px 16px 0 0;
+}
+
+.availability-modal .ant-modal-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.5px;
+}
+
+.availability-modal .ant-modal-body {
+  padding: 32px;
+  color: #e5e7eb;
+  background: #232b39;
+}
+
+.availability-modal .ant-btn-primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+  font-weight: 600;
+  border-radius: 8px;
+  height: 40px;
+  min-width: 100px;
+  font-size: 16px;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);
+  transition: background 0.2s;
+}
+.availability-modal .ant-btn-primary:hover,
+.availability-modal .ant-btn-primary:focus {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.availability-modal .ant-btn-default {
+  background: #2c3647;
+  color: #e5e7eb;
+  border: none;
+  font-weight: 600;
+  border-radius: 8px;
+  height: 40px;
+  min-width: 100px;
+  font-size: 16px;
+  margin-right: 12px;
+}
+.availability-modal .ant-btn-default:hover,
+.availability-modal .ant-btn-default:focus {
+  background: #374151;
+  color: #fff;
+}
+
+.availability-modal .ant-select-selector,
+.availability-modal .ant-input,
+.availability-modal .ant-picker {
+  background: #181f2a !important;
+  color: #e5e7eb !important;
+  border: 1px solid #2c3647 !important;
+  border-radius: 8px !important;
+  min-height: 40px;
+  font-size: 16px;
+  transition: border 0.2s;
+}
+
+.availability-modal .ant-select-selector:focus,
+.availability-modal .ant-input:focus,
+.availability-modal .ant-picker-focused,
+.availability-modal .ant-picker-input > input:focus {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.08);
+  background: #181f2a !important;
+  color: #e5e7eb !important;
+}
+
+.availability-modal .ant-select-dropdown,
+.availability-modal .ant-picker-dropdown {
+  background: #232b39 !important;
+  color: #e5e7eb !important;
+}
+
+.availability-modal .ant-select-item-option,
+.availability-modal .ant-picker-cell-inner {
+  color: #e5e7eb !important;
+}
+
+.availability-modal .ant-select-item-option-selected,
+.availability-modal .ant-select-item-option-active,
+.availability-modal .ant-picker-cell-selected .ant-picker-cell-inner {
+  background: #2563eb !important;
+  color: #fff !important;
+}
+
+.availability-modal .ant-input[disabled],
+.availability-modal .ant-select-disabled .ant-select-selector {
+  background: #232b39 !important;
+  color: #888 !important;
+  opacity: 0.7;
+}
+
+.availability-modal .ant-input-number {
+  background: #181f2a !important;
+  color: #e5e7eb !important;
+  border: 1px solid #2c3647 !important;
+  border-radius: 8px !important;
+  min-height: 40px;
+  font-size: 16px;
+  transition: border 0.2s;
+}
+.availability-modal .ant-input-number-input {
+  background: transparent !important;
+  color: #e5e7eb !important;
+}
+.availability-modal .ant-input-number:focus,
+.availability-modal .ant-input-number-focused {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.08);
+}

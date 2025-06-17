@@ -1,0 +1,128 @@
+.calendar-container {
+  height: 100vh;
+}
+
+.b-dayview-day-detail {
+  background: none !important;
+}
+.b-weeks-container {
+  background: none !important;
+}
+.b-toolbar-content div div div div {
+  background: none !important;
+}
+
+/* Time range restricted teacher field styling */
+.time-range-restricted {
+  background-color: #fff3cd !important;
+  border: 2px solid #ffc107 !important;
+  border-radius: 4px !important;
+}
+
+.time-range-restricted:hover {
+  background-color: #ffeaa7 !important;
+  border-color: #fdcb6e !important;
+}
+
+.time-range-restricted .b-combo-input {
+  background-color: #fff3cd !important;
+  color: #856404 !important;
+  font-weight: bold !important;
+}
+
+/* Warning icon for restricted fields */
+.time-range-restricted::before {
+  content: "⚠️";
+  position: absolute;
+  right: 25px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Not Available time range styling */
+.not-available-timerange {
+  background-color: #dc2626 !important;
+  color: white !important;
+  border: 2px solid #b91c1c !important;
+  opacity: 0.8 !important;
+}
+
+.not-available-timerange:hover {
+  background-color: #b91c1c !important;
+  opacity: 1 !important;
+}
+
+/* Style for time ranges in calendar */
+.fc-event.not-available-timerange {
+  background-color: #dc2626 !important;
+  border: 2px solid #b91c1c !important;
+  color: white !important;
+}
+
+/* Disabled field styles for Unavailable status */
+.disabled-field {
+  opacity: 0.5 !important;
+  background-color: #f5f5f5 !important;
+  color: #999 !important;
+  cursor: not-allowed !important;
+  
+  &:hover {
+    background-color: #f5f5f5 !important;
+  }
+}
+
+/* Unavailable event styling */
+.unavailable-event {
+  background-color: #dc2626 !important;
+  color: white !important;
+  border: 2px solid #b91c1c !important;
+  font-weight: bold !important;
+  text-align: center !important;
+  opacity: 0.9 !important;
+}
+
+.unavailable-event:hover {
+  background-color: #b91c1c !important;
+  opacity: 1 !important;
+}
+
+/* Hide "All day" field in event editor */
+.b-popup.b-eventeditor .b-allday-field,
+.b-popup.b-eventeditor [data-field="allDay"],
+.b-popup.b-eventeditor [data-ref="allDayField"],
+.b-popup.b-eventeditor .b-checkbox[data-field="allDay"],
+.b-popup.b-eventeditor .b-field[data-ref="allDayField"],
+.b-popup.b-eventeditor .b-widget[data-ref="allDayField"],
+.b-popup.b-eventeditor label[for*="allday" i],
+.b-popup.b-eventeditor label[for*="all-day" i],
+.b-popup.b-eventeditor label:contains("All day"),
+.b-popup.b-eventeditor .b-checkbox:has(+ label:contains("All day")),
+.b-popup.b-eventeditor .b-field:has(label:contains("All day")) {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Add style to fix the event editor positioning */
+.event-editor {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  max-height: 90vh !important;
+  overflow-y: auto !important;
+  z-index: 9999 !important;
+}
+
+/* Ensure the background mask covers the entire viewport */
+.modal-mask {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+}
