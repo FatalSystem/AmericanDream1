@@ -29,6 +29,7 @@ import CreateEventModal from "./CreateEventModal";
 import "./Calendar.css";
 import dayjs from "dayjs";
 import { useTimezone } from "../../contexts/TimezoneContext";
+import EventCreateForm from "./EventCreateForm";
 
 interface CalendarEventData {
   id: string;
@@ -164,6 +165,8 @@ const Calendar: React.FC = () => {
   const [studentSearch, setStudentSearch] = useState("");
   const [eventError, setEventError] = useState("");
   const calendarRef = useRef<FullCalendar>(null);
+  const [editEventData, setEditEventData] = useState<EventDetails | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   const fetchTeachers = async () => {
     try {
@@ -220,15 +223,16 @@ const Calendar: React.FC = () => {
       let eventsArray = Array.isArray(response.data)
         ? response.data
         : response.data.events?.rows || [];
+      eventsArray.forEach((event: any, idx: number) => {
+        console.log(`Event[${idx}]:`, event);
+      });
       const formattedEvents: CustomEventInput[] = eventsArray.map(
         (event: any) => {
-          const startDate = dayjs(event.startDate || event.start).tz(timezone);
-          const endDate = dayjs(event.endDate || event.end).tz(timezone);
           return {
             id: String(event.id),
             title: event.name || event.title || "",
-            start: startDate.isValid() ? startDate.format() : "",
-            end: endDate.isValid() ? endDate.format() : "",
+            start: event.startDate,
+            end: event.endDate,
             allDay: false,
             backgroundColor: event.eventColor || event.teacherColor,
             teacherId: String(
@@ -385,14 +389,34 @@ const Calendar: React.FC = () => {
       backgroundColor = "#E57373"; // червоний для недоступних
     }
 
-    // Форматуємо час
-    const startTime = dayjs(event.start).format("HH:mm");
-    const endTime = dayjs(event.end).format("HH:mm");
+    // Форматуємо час з перевіркою
+    const startTime =
+      event.start && dayjs(event.start).isValid()
+        ? dayjs(event.start).format("HH:mm")
+        : "—";
+    const endTime =
+      event.end && dayjs(event.end).isValid()
+        ? dayjs(event.end).format("HH:mm")
+        : "—";
 
     // Отримуємо тип уроку з extendedProps
     const classType = event.extendedProps?.class_type || "";
     const classTypeLabel =
-      classTypes.find((type) => type.value === classType)?.label || "";
+      classTypes.find((type) => type.value === classType)?.label ||
+      classType ||
+      "";
+
+    // Отримуємо ім'я студента
+    let studentName = event.extendedProps?.student_name_text || "";
+    if (!studentName && event.title) {
+      studentName = event.title
+        .replace(
+          /^(Trial|Regular|Instant|Group|Trial Lesson|Regular Lesson|Instant Lesson|Group Lesson)\s*-\s*/gi,
+          ""
+        )
+        .replace(/^-+/, "")
+        .trim();
+    }
 
     return (
       <div
@@ -401,92 +425,54 @@ const Calendar: React.FC = () => {
           height: "100%",
           background: `linear-gradient(135deg, ${backgroundColor}, ${backgroundColor}ee)`,
           borderRadius: "8px",
-          padding: "8px 10px",
+          padding: "10px 12px 8px 12px",
           overflow: "hidden",
           color: "#FFFFFF",
-          fontSize: "13px",
-          lineHeight: "1.4",
           display: "flex",
           flexDirection: "column",
-          gap: "4px",
+          justifyContent: "center",
+          gap: "6px",
           boxShadow:
             "0 2px 4px rgba(0,0,0,0.1), inset 0 1px rgba(255,255,255,0.1)",
           border: "1px solid rgba(255,255,255,0.1)",
         }}
       >
+        {/* Lesson type */}
         <div
           style={{
+            fontWeight: 700,
+            fontSize: 16,
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
-            fontWeight: "600",
-            fontSize: "14px",
-            letterSpacing: "-0.3px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "8px",
+            lineHeight: 1.2,
           }}
         >
-          <span>
-            {classTypeLabel
-              ? `${classTypeLabel} - ${formatEventTitle(event)}`
-              : formatEventTitle(event)}
-          </span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleEventClick({ event } as EventClickArg);
-            }}
-            style={{
-              background: "rgba(255, 255, 255, 0.2)",
-              border: "none",
-              borderRadius: "4px",
-              padding: "2px 6px",
-              cursor: "pointer",
-              color: "#fff",
-              fontSize: "12px",
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
-          >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-            </svg>
-            Edit
-          </button>
+          {classTypeLabel}
         </div>
+        {/* Student's name */}
         <div
           style={{
+            fontWeight: 500,
+            fontSize: 14,
+            color: "#e0e7ef",
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
-            opacity: "0.9",
-            fontSize: "12px",
-            fontWeight: "500",
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
+            lineHeight: 1.2,
           }}
         >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            style={{ opacity: 0.7 }}
-          >
-            <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm0 18c-4.4 0-8-3.6-8-8s3.6-8 8-8 8 3.6 8 8-3.6 8-8 8zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7z" />
-          </svg>
+          {studentName}
+        </div>
+        {/* Start / End time */}
+        <div
+          style={{
+            fontWeight: 400,
+            fontSize: 13,
+            color: "#cbd5e1",
+            lineHeight: 1.2,
+          }}
+        >
           {startTime} - {endTime}
         </div>
       </div>
@@ -547,7 +533,6 @@ const Calendar: React.FC = () => {
   };
 
   const handleEventClick = (info: EventClickArg) => {
-    console.log("Event clicked:", info.event);
     const event = info.event;
     const eventData = event.extendedProps;
     const classType = eventData.class_type || eventData.type || "";
@@ -559,8 +544,8 @@ const Calendar: React.FC = () => {
       title: classTypeLabel
         ? `${classTypeLabel} - ${event.title}`
         : event.title,
-      start: event.start?.toISOString() || "",
-      end: event.end?.toISOString() || "",
+      start: event.start || event.extendedProps?.startDate || "",
+      end: event.end || event.extendedProps?.endDate || "",
       teacherId: eventData.teacherId,
       class_status: eventData.class_status,
       class_type: classType,
@@ -697,6 +682,26 @@ const Calendar: React.FC = () => {
     }
     return "teacher";
   }
+
+  // Додаю функцію для відкриття модального редагування
+  const handleEditEvent = () => {
+    setEditEventData(eventDetails);
+    setIsEditModalOpen(true);
+    setIsEventDetailsOpen(false);
+  };
+
+  // Додаю функцію для збереження редагованої події
+  const handleUpdateEvent = async (updatedData: any) => {
+    try {
+      await api.put(`/calendar/events/${updatedData.id}`, updatedData);
+      setIsEditModalOpen(false);
+      setEditEventData(null);
+      fetchEvents();
+      message.success("Event updated successfully");
+    } catch (error) {
+      message.error("Failed to update event");
+    }
+  };
 
   return (
     <div className="calendar-container with-sidebar">
@@ -973,6 +978,7 @@ const Calendar: React.FC = () => {
                   { value: "scheduled", label: "Scheduled" },
                   { value: "given", label: "Given" },
                   { value: "student_no_show", label: "Student No Show" },
+                  { value: "teacher_no_show", label: "Teacher No Show" },
                   { value: "cancelled", label: "Cancelled" },
                   ...([
                     "manager",
@@ -1246,107 +1252,237 @@ const Calendar: React.FC = () => {
           centered
           className="availability-modal"
         >
-          <div style={{ fontSize: "16px" }}>
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontWeight: 500, marginBottom: "8px" }}>Start:</div>
-              <div>
-                {eventDetails &&
-                  dayjs(eventDetails.start)
-                    .tz(timezone)
-                    .format("DD.MM.YYYY, HH:mm")}
+          {isEditingStatus ? (
+            <Form layout="vertical">
+              <Form.Item label="Start Time">
+                <DatePicker
+                  showTime
+                  format="YYYY-MM-DD HH:mm"
+                  value={eventDetails?.start ? dayjs(eventDetails.start) : null}
+                  onChange={(v) => {
+                    if (v && eventDetails) {
+                      setEventDetails({
+                        ...eventDetails,
+                        start: v.toISOString(),
+                      });
+                    }
+                  }}
+                  style={{ width: "100%" }}
+                />
+              </Form.Item>
+              <Form.Item label="End Time">
+                <DatePicker
+                  showTime
+                  format="YYYY-MM-DD HH:mm"
+                  value={eventDetails?.end ? dayjs(eventDetails.end) : null}
+                  onChange={(v) => {
+                    if (v && eventDetails) {
+                      setEventDetails({
+                        ...eventDetails,
+                        end: v.toISOString(),
+                      });
+                    }
+                  }}
+                  style={{ width: "100%" }}
+                />
+              </Form.Item>
+              <Form.Item label="Teacher">
+                <Select
+                  value={eventDetails?.teacherId}
+                  options={teachers.map((t) => ({
+                    value: t.id,
+                    label: `${t.first_name} ${t.last_name}`,
+                  }))}
+                  onChange={(v) =>
+                    setEventDetails(
+                      eventDetails
+                        ? { ...eventDetails, teacherId: v }
+                        : eventDetails
+                    )
+                  }
+                  style={{ width: "100%" }}
+                />
+              </Form.Item>
+              <Form.Item label="Status">
+                <Select
+                  value={eventDetails?.class_status}
+                  onChange={(v) =>
+                    setEventDetails(
+                      eventDetails
+                        ? { ...eventDetails, class_status: v }
+                        : eventDetails
+                    )
+                  }
+                  options={[
+                    { value: "scheduled", label: "Scheduled" },
+                    { value: "given", label: "Given" },
+                    { value: "student_no_show", label: "Student No Show" },
+                    { value: "cancelled", label: "Cancelled" },
+                    { value: "teacher_no_show", label: "Teacher not show" },
+                  ]}
+                  style={{ width: "100%" }}
+                />
+              </Form.Item>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <Button onClick={() => setIsEditingStatus(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="primary"
+                  onClick={async () => {
+                    if (!eventDetails) return;
+                    await api.put(`/calendar/events/${eventDetails.id}`, {
+                      startDate: eventDetails.start,
+                      endDate: eventDetails.end,
+                      teacher_id: eventDetails.teacherId,
+                      class_status: eventDetails.class_status,
+                    });
+                    setIsEditingStatus(false);
+                    fetchEvents();
+                    message.success("Event updated successfully");
+                  }}
+                >
+                  Save
+                </Button>
               </div>
-            </div>
-
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontWeight: 500, marginBottom: "8px" }}>End:</div>
-              <div>
-                {eventDetails &&
-                eventDetails.end &&
-                dayjs(eventDetails.end).isValid()
-                  ? dayjs(eventDetails.end)
+            </Form>
+          ) : (
+            <div style={{ fontSize: "16px" }}>
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ fontWeight: 500, marginBottom: "8px" }}>
+                  Start:
+                </div>
+                <div>
+                  {eventDetails &&
+                    dayjs(eventDetails.start)
                       .tz(timezone)
-                      .format("DD.MM.YYYY, HH:mm")
-                  : eventDetails &&
-                    eventDetails.rawEvent &&
-                    eventDetails.rawEvent.end &&
-                    dayjs(eventDetails.rawEvent.end).isValid()
-                  ? dayjs(eventDetails.rawEvent.end)
-                      .tz(timezone)
-                      .format("DD.MM.YYYY, HH:mm")
-                  : "Невідомо"}
+                      .format("DD.MM.YYYY, HH:mm")}
+                </div>
               </div>
-            </div>
 
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontWeight: 500, marginBottom: "8px" }}>
-                Teacher:
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ fontWeight: 500, marginBottom: "8px" }}>End:</div>
+                <div>
+                  {eventDetails &&
+                  eventDetails.end &&
+                  dayjs(eventDetails.end).isValid()
+                    ? dayjs(eventDetails.end)
+                        .tz(timezone)
+                        .format("DD.MM.YYYY, HH:mm")
+                    : eventDetails &&
+                      eventDetails.rawEvent &&
+                      eventDetails.rawEvent.end &&
+                      dayjs(eventDetails.rawEvent.end).isValid()
+                    ? dayjs(eventDetails.rawEvent.end)
+                        .tz(timezone)
+                        .format("DD.MM.YYYY, HH:mm")
+                    : "Невідомо"}
+                </div>
               </div>
-              <div>
-                {(() => {
-                  if (!eventDetails) return "";
-                  const teacherId = Number(eventDetails.teacherId);
-                  const teacher = teachers.find((t) => t.id === teacherId);
-                  return teacher
-                    ? `${teacher.first_name} ${teacher.last_name}`
-                    : "No teacher assigned";
-                })()}
-              </div>
-            </div>
 
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontWeight: 500, marginBottom: "8px" }}>
-                Student:
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ fontWeight: 500, marginBottom: "8px" }}>
+                  Teacher:
+                </div>
+                <div>
+                  {(() => {
+                    if (!eventDetails) return "";
+                    const teacherId = Number(eventDetails.teacherId);
+                    const teacher = teachers.find((t) => t.id === teacherId);
+                    return teacher
+                      ? `${teacher.first_name} ${teacher.last_name}`
+                      : "No teacher assigned";
+                  })()}
+                </div>
               </div>
-              <div>
-                {eventDetails && eventDetails.student_name_text
-                  ? eventDetails.student_name_text
-                  : eventDetails &&
-                    eventDetails.title &&
-                    !eventDetails.isNotAvailable
-                  ? eventDetails.title
-                      .replace(
-                        /^(Trial|Regular|Instant|Group|Trial Lesson|Regular Lesson|Instant Lesson|Group Lesson)\s*-\s*/gi,
-                        ""
-                      )
-                      .replace(
-                        /^(Trial|Regular|Instant|Group|Trial Lesson|Regular Lesson|Instant Lesson|Group Lesson)\s*-\s*/gi,
-                        ""
-                      )
-                      .replace(/^-+/, "")
-                      .trim()
-                  : "—"}
-              </div>
-            </div>
 
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontWeight: 500, marginBottom: "8px" }}>
-                Status:
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ fontWeight: 500, marginBottom: "8px" }}>
+                  Student:
+                </div>
+                <div>
+                  {eventDetails && eventDetails.student_name_text
+                    ? eventDetails.student_name_text
+                    : eventDetails &&
+                      eventDetails.title &&
+                      !eventDetails.isNotAvailable
+                    ? eventDetails.title
+                        .replace(
+                          /^(Trial|Regular|Instant|Group|Trial Lesson|Regular Lesson|Instant Lesson|Group Lesson)\s*-\s*/gi,
+                          ""
+                        )
+                        .replace(
+                          /^(Trial|Regular|Instant|Group|Trial Lesson|Regular Lesson|Instant Lesson|Group Lesson)\s*-\s*/gi,
+                          ""
+                        )
+                        .replace(/^-+/, "")
+                        .trim()
+                    : "—"}
+                </div>
               </div>
-              <Select
-                value={statusValue}
-                onChange={(value) => setStatusValue(value)}
-                options={[
-                  { value: "scheduled", label: "Scheduled" },
-                  { value: "given", label: "Given" },
-                  { value: "student_no_show", label: "Student No Show" },
-                  { value: "cancelled", label: "Cancelled" },
-                ]}
-                style={{ width: "100%" }}
-                disabled={eventDetails?.isNotAvailable}
-              />
-            </div>
 
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontWeight: 500, marginBottom: "8px" }}>
-                Lesson Type:
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ fontWeight: 500, marginBottom: "8px" }}>
+                  Status:
+                </div>
+                <Select
+                  value={statusValue}
+                  onChange={(value) => setStatusValue(value)}
+                  options={[
+                    { value: "scheduled", label: "Scheduled" },
+                    { value: "given", label: "Given" },
+                    { value: "student_no_show", label: "Student No Show" },
+                    { value: "teacher_no_show", label: "Teacher No Show" },
+                    { value: "cancelled", label: "Cancelled" },
+                  ]}
+                  style={{ width: "100%" }}
+                  disabled={eventDetails?.isNotAvailable}
+                />
               </div>
-              <div>
-                {eventDetails && eventDetails.class_type
-                  ? eventDetails.class_type
-                  : "Not specified"}
+
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ fontWeight: 500, marginBottom: "8px" }}>
+                  Lesson Type:
+                </div>
+                <div>
+                  {eventDetails && eventDetails.class_type
+                    ? eventDetails.class_type
+                    : "Not specified"}
+                </div>
               </div>
             </div>
-          </div>
+          )}
+        </Modal>
+        <Modal
+          title="Edit Event"
+          open={isEditModalOpen}
+          onCancel={() => setIsEditModalOpen(false)}
+          footer={null}
+          width={800}
+          destroyOnClose
+          maskClosable={false}
+          className="create-event-modal"
+          style={{ top: 20 }}
+        >
+          {editEventData && (
+            <EventCreateForm
+              teachers={teachers}
+              onClose={() => setIsEditModalOpen(false)}
+              onSuccess={handleUpdateEvent}
+              start={
+                editEventData.start ? new Date(editEventData.start) : undefined
+              }
+              end={editEventData.end ? new Date(editEventData.end) : undefined}
+              // Додати інші потрібні пропси для передачі даних у форму
+            />
+          )}
         </Modal>
       </div>
     </div>

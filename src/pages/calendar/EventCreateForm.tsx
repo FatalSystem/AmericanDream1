@@ -73,11 +73,19 @@ function getUserRole() {
   return "teacher";
 }
 
+// Додаю визначення timezone користувача
+const getDefaultTimezone = () => {
+  if (typeof window !== "undefined" && Intl && Intl.DateTimeFormat) {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Kyiv";
+  }
+  return "Europe/Kyiv";
+};
+
 export default function EventCreateForm({
   teachers,
   onClose,
   onSuccess,
-  timezone = "local",
+  timezone = getDefaultTimezone(),
   start: defaultStart = null,
   end: defaultEnd = null,
 }: EventCreateFormProps & {
@@ -300,10 +308,11 @@ export default function EventCreateForm({
     // If unavailable, skip student/group/payment logic
     if (classType === "unavailable") {
       try {
+        const tz = timezone || getDefaultTimezone();
         const startUTC =
-          DateTime.fromISO(start, { zone: timezone }).toUTC().toISO() || "";
+          DateTime.fromISO(start, { zone: tz }).toUTC().toISO() || "";
         const endUTC =
-          DateTime.fromISO(end, { zone: timezone }).toUTC().toISO() || "";
+          DateTime.fromISO(end, { zone: tz }).toUTC().toISO() || "";
         const eventData = {
           class_type: classType,
           student_id: 0,
