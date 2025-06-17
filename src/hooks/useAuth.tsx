@@ -18,6 +18,13 @@ interface AuthState {
   setAuth: (action: { type: string; payload: any }) => void;
   logout: () => void;
   login: (email: string, password: string) => Promise<void>;
+  register: (
+    email: string,
+    password: string,
+    first_name: string,
+    last_name: string,
+    role: string
+  ) => Promise<void>;
 }
 
 export const useAuth = create<AuthState>()(
@@ -63,9 +70,19 @@ export const useAuth = create<AuthState>()(
         });
         localStorage.setItem("token", token);
       },
+      register: async (email, password, first_name, last_name, role) => {
+        const response = await api.post("/auth/signup", {
+          email,
+          password,
+          first_name,
+          last_name,
+          role,
+        });
+        return response.data;
+      },
     }),
     {
       name: "auth-storage",
-    },
-  ),
+    }
+  )
 );

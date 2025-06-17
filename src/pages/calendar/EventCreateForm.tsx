@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from "react";
-import { calendarApi } from "@/app/api/calendar";
+import { calendarApi } from "../../api/calendar";
 import React from "react";
 import "./EventCreateForm.css";
-import { TeacherWithColor } from "@/app/store/CalendarContext";
+import { TeacherWithColor } from "../../store/CalendarContext";
 import { DateTime } from "luxon";
 
 type LessonStatus =
@@ -22,7 +22,7 @@ interface Student {
 interface EventCreateFormProps {
   teachers: TeacherWithColor[];
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (eventData: any) => void;
   timezone?: string;
   start?: Date | null;
   end?: Date | null;
@@ -98,10 +98,10 @@ export default function EventCreateForm({
   const [teacherId, setTeacherId] = useState(teachers[0]?.id || "");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [start, setStart] = useState(
-    defaultStart ? defaultStart.toISOString().slice(0, 16) : "",
+    defaultStart ? defaultStart.toISOString().slice(0, 16) : ""
   );
   const [end, setEnd] = useState(
-    defaultEnd ? defaultEnd.toISOString().slice(0, 16) : "",
+    defaultEnd ? defaultEnd.toISOString().slice(0, 16) : ""
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,9 +134,7 @@ export default function EventCreateForm({
 
   const availableClassTypes = classTypes.filter(
     (type) =>
-      !type.adminOnly ||
-      userRole === "accountant" ||
-      userRole === "super_admin",
+      !type.adminOnly || userRole === "accountant" || userRole === "super_admin"
   );
 
   const [students, setStudents] = useState<Student[]>([]);
@@ -155,14 +153,14 @@ export default function EventCreateForm({
         if (Array.isArray(data)) {
           setStudents(
             (data as Student[]).sort((a: Student, b: Student) =>
-              a.last_name.localeCompare(b.last_name),
-            ),
+              a.last_name.localeCompare(b.last_name)
+            )
           );
         } else if (Array.isArray(data.students)) {
           setStudents(
             (data.students as Student[]).sort((a: Student, b: Student) =>
-              a.last_name.localeCompare(b.last_name),
-            ),
+              a.last_name.localeCompare(b.last_name)
+            )
           );
         }
       } catch {
@@ -305,12 +303,12 @@ export default function EventCreateForm({
         };
         await calendarApi.createCalendar(eventData);
         onClose();
-        if (onSuccess) onSuccess();
+        if (onSuccess) onSuccess(eventData);
       } catch (err) {
         setError(
           err instanceof Error
             ? err.message
-            : "Failed to create unavailable block",
+            : "Failed to create unavailable block"
         );
       } finally {
         setLoading(false);
@@ -323,7 +321,7 @@ export default function EventCreateForm({
     if (classType !== "group" && studentId) {
       try {
         const balanceRes = await calendarApi.getStudentRemainingClasses(
-          parseInt(studentId),
+          studentId.toString()
         );
         const paidCount = balanceRes?.remaining || 0;
         const isTrial = classType === "trial";
@@ -338,7 +336,7 @@ export default function EventCreateForm({
             const diffHours = startDateTime.diff(now, "hours").hours;
             if (diffHours < 12) {
               setError(
-                "Cannot add a lesson for this student less than 12 hours ahead without paid classes.",
+                "Cannot add a lesson for this student less than 12 hours ahead without paid classes."
               );
               setLoading(false);
               return;
@@ -392,7 +390,7 @@ export default function EventCreateForm({
 
       onClose();
       if (onSuccess) {
-        onSuccess();
+        onSuccess(eventData);
       }
     } catch (err) {
       console.error("Error creating event:", err);
@@ -403,10 +401,10 @@ export default function EventCreateForm({
   };
 
   const selectedTeacher = teachers.find(
-    (t) => String(t.id) === String(teacherId),
+    (t) => String(t.id) === String(teacherId)
   );
   const selectedClassType = availableClassTypes.find(
-    (type) => type.value === classType,
+    (type) => type.value === classType
   );
 
   return (
@@ -695,7 +693,7 @@ export default function EventCreateForm({
                   <span>
                     {selectedGroupId
                       ? mockGroups.find(
-                          (g) => g.id.toString() === selectedGroupId,
+                          (g) => g.id.toString() === selectedGroupId
                         )?.name
                       : "Select group"}
                   </span>
@@ -775,187 +773,31 @@ export default function EventCreateForm({
                 </button>
                 {groupDropdownOpen && (
                   <div className="dropdown-menu">
-                    {students
-                      .slice()
-                      .sort((a, b) => {
-                        const last = a.last_name.localeCompare(b.last_name);
-                        if (last !== 0) return last;
-                        return a.first_name.localeCompare(b.first_name);
-                      })
-                      .filter((student) => {
-                        if (!studentSearch.trim()) return true;
-                        const search = studentSearch.trim().toLowerCase();
-                        return (
-                          student.first_name.toLowerCase().startsWith(search) ||
-                          student.last_name.toLowerCase().startsWith(search) ||
-                          `${student.first_name} ${student.last_name}`
-                            .toLowerCase()
-                            .includes(search) ||
-                          `${student.last_name} ${student.first_name}`
-                            .toLowerCase()
-                            .includes(search)
-                        );
-                      })
-                      .map((student) => (
-                        <button
-                          type="button"
-                          key={student.id}
-                          className={`dropdown-item ${
-                            student.id.toString() === studentId
-                              ? "selected"
-                              : ""
-                          }`}
-                          onClick={() => {
-                            setStudentId(student.id.toString());
-                            setStudentName(
-                              `${student.first_name} ${student.last_name}`,
-                            );
-                            setGroupDropdownOpen(false);
-                          }}
-                          style={{ color: "#222" }}
-                        >
-                          {student.first_name} {student.last_name}
-                        </button>
-                      ))}
+                    {students.map((student) => (
+                      <button
+                        type="button"
+                        key={student.id}
+                        className={`dropdown-item ${
+                          student.id.toString() === studentId ? "selected" : ""
+                        }`}
+                        onClick={() => {
+                          setStudentId(student.id.toString());
+                          setStudentName(
+                            student.first_name + " " + student.last_name
+                          );
+                          setGroupDropdownOpen(false);
+                        }}
+                        style={{ color: "#222" }}
+                      >
+                        {student.first_name + " " + student.last_name}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
             </>
           )}
         </div>
-      </div>
-
-      {/* Repeat Mode */}
-      <div>
-        <label className="label">Repeating</label>
-        <div className="dropdown" ref={repeatModeDropdownRef}>
-          <button
-            type="button"
-            className="dropdown-button"
-            onClick={() => {
-              const newMode = repeatMode === "none" ? "weekly" : "none";
-              setRepeatMode(newMode);
-              if (newMode === "none") {
-                setRepeatDays([]);
-                setRepeatWeeks(2);
-              }
-            }}
-            style={{ color: "#222" }}
-          >
-            <span>
-              {repeatMode === "none"
-                ? "Does not repeat"
-                : "Weekly on certain days"}
-            </span>
-            <svg
-              className="ml-2 size-4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M19 9l-7 7-7-7"
-              />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      {/* Weekly Repeat Days */}
-      {repeatMode === "weekly" && (
-        <div>
-          <label className="label">Repeat on Days</label>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
-              gap: "0.5rem",
-            }}
-          >
-            {weekDays.map((day) => (
-              <label
-                key={day.value}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.5rem",
-                  padding: "0.5rem",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "0.5rem",
-                  cursor: "pointer",
-                  backgroundColor: repeatDays.includes(day.value)
-                    ? "#dbeafe"
-                    : "#f9fafb",
-                  borderColor: repeatDays.includes(day.value)
-                    ? "#3b82f6"
-                    : "#d1d5db",
-                  fontSize: "0.75rem",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={repeatDays.includes(day.value)}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setRepeatDays([...repeatDays, day.value]);
-                    } else {
-                      setRepeatDays(repeatDays.filter((d) => d !== day.value));
-                    }
-                  }}
-                  style={{ width: "0.75rem", height: "0.75rem" }}
-                />
-                <span>{day.label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Repeat for N weeks */}
-      {repeatMode === "weekly" && (
-        <div style={{ marginTop: "1rem" }}>
-          <label className="label">Repeat for</label>
-          <input
-            type="number"
-            min={1}
-            max={12}
-            value={repeatWeeks}
-            onChange={(e) => setRepeatWeeks(Number(e.target.value))}
-            style={{
-              width: 60,
-              marginRight: 8,
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-              padding: "0.25rem 0.5rem",
-            }}
-          />
-          <span style={{ fontSize: "0.95rem" }}>weeks</span>
-        </div>
-      )}
-
-      {/* If unavailable, show info */}
-      {classType === "unavailable" && (
-        <div style={{ margin: "16px 0", color: "#dc2626", fontWeight: 600 }}>
-          This block will mark you as{" "}
-          <span style={{ color: "#b91c1c" }}>NOT AVAILABLE</span> for lessons.
-        </div>
-      )}
-
-      <div className="button-row-sticky mt-4 flex justify-end gap-2">
-        <button
-          type="button"
-          className="button cancel"
-          onClick={onClose}
-          disabled={loading}
-        >
-          Cancel
-        </button>
-        <button type="submit" className="button submit" disabled={loading}>
-          {loading ? "Creating..." : "Create"}
-        </button>
       </div>
     </form>
   );

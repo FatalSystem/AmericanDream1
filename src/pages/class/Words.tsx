@@ -51,7 +51,7 @@ const Words: React.FC<{ studentId: string; studentName: string }> = ({
           });
         } else {
           if (user?.role === "student") {
-            fetchWords(user.id);
+            fetchWords(user.id.toString());
           }
         }
       }
@@ -213,7 +213,7 @@ const Words: React.FC<{ studentId: string; studentName: string }> = ({
             },
           },
         ]
-      : [],
+      : []
   );
 
   const handleEdit = (record: any) => {

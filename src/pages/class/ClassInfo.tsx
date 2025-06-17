@@ -59,7 +59,7 @@ const ClassInfo: React.FC<{ studentId: string; studentName: string }> = ({
           theme: "dark",
         });
       } else if (user?.role === "student") {
-        fetchClassInfo(user.id);
+        fetchClassInfo(user.id.toString());
       }
     }
   }, [permissionsLoading, permissions, navigate, user]);
@@ -104,7 +104,7 @@ const ClassInfo: React.FC<{ studentId: string; studentName: string }> = ({
         canDo: "",
         notes: "",
       },
-      false,
+      false
     );
   };
 
@@ -117,7 +117,7 @@ const ClassInfo: React.FC<{ studentId: string; studentName: string }> = ({
         canDo: record.can_do,
         notes: record.notes || "",
       },
-      true,
+      true
     );
     setEditingRecord(record);
   };

@@ -1,18 +1,14 @@
 import React, { useEffect } from "react";
 import { Modal } from "antd";
 import EventCreateForm from "./EventCreateForm";
+import { TeacherWithColor } from "../../store/CalendarContext";
 
 interface CreateEventModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (eventData: any) => void;
   selectedDate?: Date | null;
-  teachers: Array<{
-    id: number;
-    first_name: string;
-    last_name: string;
-    color?: string;
-  }>;
+  teachers: TeacherWithColor[];
 }
 
 const CreateEventModal: React.FC<CreateEventModalProps> = ({

@@ -66,6 +66,7 @@ interface EventDetails {
   class_status?: string;
   isNotAvailable?: boolean;
   rawEvent?: EventClickArg["event"];
+  student_name_text?: string;
 }
 
 // Use FullCalendar's native types
@@ -113,7 +114,7 @@ const Calendar: React.FC = () => {
   const { timezone } = useTimezone();
   const [events, setEvents] = useState<CustomEventInput[]>([]);
   const [displayedEvents, setDisplayedEvents] = useState<CustomEventInput[]>(
-    [],
+    []
   );
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -176,7 +177,7 @@ const Calendar: React.FC = () => {
     try {
       const response = await api.get("/students");
       setStudents(
-        Array.isArray(response.data.students) ? response.data.students : [],
+        Array.isArray(response.data.students) ? response.data.students : []
       );
     } catch (error) {
       setStudents([]);
@@ -207,16 +208,16 @@ const Calendar: React.FC = () => {
             allDay: false,
             backgroundColor: event.eventColor || event.teacherColor,
             teacherId: String(
-              event.teacherId || event.teacher_id || event.resourceId || "",
+              event.teacherId || event.teacher_id || event.resourceId || ""
             ),
             extendedProps: {
               teacherId: String(
-                event.teacherId || event.teacher_id || event.resourceId || "",
+                event.teacherId || event.teacher_id || event.resourceId || ""
               ),
               class_status: event.class_status || "scheduled",
             },
           };
-        },
+        }
       );
       setEvents(formattedEvents);
       setDisplayedEvents(formattedEvents);
@@ -239,7 +240,7 @@ const Calendar: React.FC = () => {
   useEffect(() => {
     if (selectedTeacherIds.length > 0) {
       setDisplayedEvents(
-        events.filter((e) => selectedTeacherIds.includes(Number(e.teacherId))),
+        events.filter((e) => selectedTeacherIds.includes(Number(e.teacherId)))
       );
     } else {
       setDisplayedEvents(events);
@@ -285,7 +286,7 @@ const Calendar: React.FC = () => {
 
             await createSingleEvent(
               currentDate.format("YYYY-MM-DDTHH:mm:ss"),
-              currentEndDate.format("YYYY-MM-DDTHH:mm:ss"),
+              currentEndDate.format("YYYY-MM-DDTHH:mm:ss")
             );
           }
         }
@@ -543,7 +544,7 @@ const Calendar: React.FC = () => {
     return students.filter((student) =>
       `${student.first_name} ${student.last_name}`
         .toLowerCase()
-        .includes(searchText.toLowerCase()),
+        .includes(searchText.toLowerCase())
     );
   };
 
@@ -591,12 +592,14 @@ const Calendar: React.FC = () => {
             {teachers.map((teacher) => (
               <li
                 key={teacher.id}
-                className={`teacher-item${selectedTeacherIds.includes(teacher.id) ? " selected" : ""}`}
+                className={`teacher-item${
+                  selectedTeacherIds.includes(teacher.id) ? " selected" : ""
+                }`}
                 onClick={() => {
                   setSelectedTeacherIds((prev) =>
                     prev.includes(teacher.id)
                       ? prev.filter((id) => id !== teacher.id)
-                      : [...prev, teacher.id],
+                      : [...prev, teacher.id]
                   );
                 }}
                 style={{
@@ -621,7 +624,9 @@ const Calendar: React.FC = () => {
               </li>
             ))}
             <li
-              className={`teacher-item${selectedTeacherIds.length === 0 ? " selected" : ""}`}
+              className={`teacher-item${
+                selectedTeacherIds.length === 0 ? " selected" : ""
+              }`}
               onClick={() => setSelectedTeacherIds([])}
               style={{ cursor: "pointer", marginTop: 12, fontWeight: 600 }}
             >
@@ -703,7 +708,7 @@ const Calendar: React.FC = () => {
                   minute: "2-digit",
                   hour12: false,
                 },
-                slotMinWidth: "100px",
+                slotMinWidth: 100,
               },
               timeGridDay: {
                 titleFormat: {
@@ -716,7 +721,7 @@ const Calendar: React.FC = () => {
                   minute: "2-digit",
                   hour12: false,
                 },
-                slotMinWidth: "100px",
+                slotMinWidth: 100,
               },
             }}
             eventTimeFormat={{
