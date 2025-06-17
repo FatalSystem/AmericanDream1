@@ -14,14 +14,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@esbuild/darwin-arm64": "^0.25.2",
     "@fullcalendar/core": "^6.1.10",
     "@fullcalendar/daygrid": "^6.1.10",
     "@fullcalendar/interaction": "^6.1.10",
     "@fullcalendar/moment-timezone": "^6.1.17",
     "@fullcalendar/react": "^6.1.10",
     "@fullcalendar/timegrid": "^6.1.10",
-    "@rollup/rollup-darwin-arm64": "^4.40.0",
     "antd": "^5.24.2",
     "axios": "^1.7.9",
     "flowbite-react": "^0.8.0",
