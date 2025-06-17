@@ -176,11 +176,28 @@ const Calendar: React.FC = () => {
   const fetchStudents = async () => {
     try {
       const response = await api.get("/students");
-      setStudents(
-        Array.isArray(response.data.students) ? response.data.students : []
-      );
+      console.log("API /students response:", response.data);
+      const sorted = Array.isArray(response.data)
+        ? response.data
+            .map((s) => ({
+              ...s,
+              last_name: s.last_name ? s.last_name.trim() : "",
+              first_name: s.first_name ? s.first_name.trim() : "",
+            }))
+            .sort((a, b) => {
+              // Ті, у кого є last_name, йдуть першими
+              if (a.last_name && !b.last_name) return -1;
+              if (!a.last_name && b.last_name) return 1;
+              // Далі сортуємо за last_name, потім за first_name
+              const last = a.last_name.localeCompare(b.last_name);
+              if (last !== 0) return last;
+              return a.first_name.localeCompare(b.first_name);
+            })
+        : [];
+      setStudents(sorted);
     } catch (error) {
       setStudents([]);
+      console.error("Error fetching students:", error);
     }
   };
 
@@ -539,13 +556,38 @@ const Calendar: React.FC = () => {
     { value: "80 min", label: "80 minutes" },
   ];
 
+  console.log("students in state:", students);
   const getFilteredStudents = (searchText: string) => {
     if (!Array.isArray(students)) return [];
-    return students.filter((student) =>
-      `${student.first_name} ${student.last_name}`
-        .toLowerCase()
-        .includes(searchText.toLowerCase())
+    const search = searchText.trim().toLowerCase();
+    if (!search) {
+      console.log("filtered students (all):", students);
+      return students;
+    }
+    // Якщо введено одну букву — шукаємо по першій букві імені або прізвища
+    if (search.length === 1) {
+      const filtered = students.filter(
+        (student) =>
+          student.first_name.toLowerCase().startsWith(search) ||
+          student.last_name.toLowerCase().startsWith(search)
+      );
+      console.log("filtered students (first letter):", filtered);
+      return filtered;
+    }
+    // Інакше — шукаємо по входженню
+    const filtered = students.filter(
+      (student) =>
+        student.first_name.toLowerCase().includes(search) ||
+        student.last_name.toLowerCase().includes(search) ||
+        `${student.first_name} ${student.last_name}`
+          .toLowerCase()
+          .includes(search) ||
+        `${student.first_name} ${student.last_name}`
+          .toLowerCase()
+          .includes(searchText.toLowerCase())
     );
+    console.log("filtered students:", filtered);
+    return filtered;
   };
 
   // Add styles for the modal
