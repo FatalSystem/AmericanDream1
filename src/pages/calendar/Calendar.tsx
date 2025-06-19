@@ -132,6 +132,7 @@ interface EventForm {
   classType: string;
   status: string;
   duration: string;
+  payment_status?: string;
   repeating: {
     type: "none" | "weekly";
     days: number[];
@@ -148,127 +149,55 @@ const classTypes = [
 ];
 
 const convertToTimezone = (dateStr: string, targetTimezone: string): string => {
-  try {
-    // If the date is already in ISO format with timezone info
-    if (
-      dateStr.includes("Z") ||
-      (dateStr.includes("T") && dateStr.includes("+"))
-    ) {
-      return dayjs(dateStr).tz(targetTimezone).format();
-    }
-
-    // If it's a plain datetime, assume it's in DB timezone
-    return dayjs.tz(dateStr, DEFAULT_DB_TIMEZONE).tz(targetTimezone).format();
-  } catch (error) {
-    console.error("Error converting timezone:", error);
-    return dateStr;
-  }
+  const date = dayjs.tz(dateStr, "UTC");
+  return date.tz(targetTimezone).format();
 };
 
-const checkLessonOverlap = async (
-  teacherId: number,
-  startDate: string,
-  endDate: string
-): Promise<boolean> => {
+// Проста перевірка - чи вже є подія на цей час
+const isTimeSlotBusy = async (start: string, end: string): Promise<boolean> => {
   try {
-    // Convert dates to the DB timezone for comparison
-    const start = dayjs(startDate).tz(DEFAULT_DB_TIMEZONE);
-    const end = dayjs(endDate).tz(DEFAULT_DB_TIMEZONE);
-
-    // Add 5 minutes buffer
-    const startWithBuffer = start.subtract(5, "minute");
-    const endWithBuffer = end.add(5, "minute");
-
-    console.log("Checking overlap for:", {
-      teacherId,
-      start: start.format(),
-      end: end.format(),
-      startWithBuffer: startWithBuffer.format(),
-      endWithBuffer: endWithBuffer.format(),
-    });
-
-    // Get all events for this teacher
-    const response = await api.get("/calendar/events", {
-      params: {
-        teacherId: teacherId,
-        start: startWithBuffer.format(),
-        end: endWithBuffer.format(),
-      },
-    });
-
-    const existingEvents = Array.isArray(response.data)
+    const response = await api.get("/calendar/events");
+    const events = Array.isArray(response.data)
       ? response.data
       : response.data.events?.rows || [];
 
-    // Filter out cancelled events and the current event being edited
-    const activeEvents = existingEvents.filter(
-      (event: any) =>
-        event.class_status !== "cancelled" && event.teacher_id === teacherId
-    );
+    // Convert input times to UTC for comparison
+    const newStart = dayjs.tz(start, DEFAULT_DB_TIMEZONE);
+    const newEnd = dayjs.tz(end, DEFAULT_DB_TIMEZONE);
 
-    console.log("Existing active events:", activeEvents);
+    console.log("🔍 Checking time slot:", {
+      inputStart: start,
+      inputEnd: end,
+      convertedStart: newStart.format("YYYY-MM-DD HH:mm:ss"),
+      convertedEnd: newEnd.format("YYYY-MM-DD HH:mm:ss"),
+      timezone: DEFAULT_DB_TIMEZONE,
+    });
 
-    // Check for overlaps
-    for (const event of activeEvents) {
-      const eventStart = dayjs(event.startDate).tz(DEFAULT_DB_TIMEZONE);
-      const eventEnd = dayjs(event.endDate).tz(DEFAULT_DB_TIMEZONE);
+    for (const event of events) {
+      if (event.class_status === "cancelled") continue;
 
-      // Check if events overlap (including buffer)
-      if (
-        (start.isBefore(eventEnd) && end.isAfter(eventStart)) ||
-        (startWithBuffer.isBefore(eventEnd) &&
-          endWithBuffer.isAfter(eventStart))
-      ) {
-        console.log("Found overlap with event:", {
-          existingEvent: event,
-          overlap: {
-            start: start.format(),
-            end: end.format(),
-            eventStart: eventStart.format(),
-            eventEnd: eventEnd.format(),
-          },
-        });
-        return true;
+      const eventStart = dayjs.utc(event.startDate);
+      const eventEnd = dayjs.utc(event.endDate);
+
+      console.log("🔍 Comparing with event:", {
+        eventId: event.id,
+        eventStart: eventStart.format("YYYY-MM-DD HH:mm:ss"),
+        eventEnd: eventEnd.format("YYYY-MM-DD HH:mm:ss"),
+        hasOverlap: newStart.isBefore(eventEnd) && newEnd.isAfter(eventStart),
+      });
+
+      // Перевіряємо чи є перекриття
+      if (newStart.isBefore(eventEnd) && newEnd.isAfter(eventStart)) {
+        console.log("❌ Time slot is busy!");
+        return true; // Час зайнятий
       }
     }
 
-    return false;
-  } catch (error) {
-    console.error("Error checking lesson overlap:", error);
-    throw error;
-  }
-};
-
-const checkExactTimeSlot = async (startDate: string): Promise<boolean> => {
-  try {
-    // Convert to DB timezone for comparison
-    const start = dayjs(startDate).tz(DEFAULT_DB_TIMEZONE).format();
-
-    console.log("Checking if time slot exists:", start);
-
-    // Get all events
-    const response = await api.get("/calendar/events");
-    const existingEvents = Array.isArray(response.data)
-      ? response.data
-      : response.data.events?.rows || [];
-
-    // Check if any event starts at exactly the same time
-    const hasExactMatch = existingEvents.some((event: any) => {
-      const eventStart = dayjs(event.startDate)
-        .tz(DEFAULT_DB_TIMEZONE)
-        .format();
-      return eventStart === start;
-    });
-
-    if (hasExactMatch) {
-      console.log("Found exact time match");
-      return true;
-    }
-
-    return false;
+    console.log("✅ Time slot is free!");
+    return false; // Час вільний
   } catch (error) {
     console.error("Error checking time slot:", error);
-    throw error;
+    return false;
   }
 };
 
@@ -317,6 +246,18 @@ const Calendar: React.FC = () => {
   const calendarRef = useRef<any>(null);
   const [editEventData, setEditEventData] = useState<EventDetails | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  // Log timezone information
+  console.log("🌍 Timezone Info:", {
+    currentTimezone: timezone,
+    browserTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    userTimezone: dayjs.tz.guess(),
+    currentTime: dayjs().format("YYYY-MM-DD HH:mm:ss"),
+    currentTimeInUserTz: dayjs().tz(timezone).format("YYYY-MM-DD HH:mm:ss"),
+    currentTimeInBrowserTz: dayjs()
+      .tz(Intl.DateTimeFormat().resolvedOptions().timeZone)
+      .format("YYYY-MM-DD HH:mm:ss"),
+  });
 
   // Додамо логування при зміні view
   const handleViewChange = (view: any) => {
@@ -385,45 +326,62 @@ const Calendar: React.FC = () => {
 
       const startDate = dayjs(view.activeStart)
         .tz(DEFAULT_DB_TIMEZONE)
-        .format();
-      const endDate = dayjs(view.activeEnd).tz(DEFAULT_DB_TIMEZONE).format();
+        .format("YYYY-MM-DDTHH:mm:ss");
+      const endDate = dayjs(view.activeEnd)
+        .tz(DEFAULT_DB_TIMEZONE)
+        .format("YYYY-MM-DDTHH:mm:ss");
 
-      console.log("Fetch period:", { startDate, endDate });
+      console.log("Fetch period:", { startDate, endDate, selectedTeacherIds });
+
+      // Формуємо параметри запиту
+      const params: any = {
+        start: startDate,
+        end: endDate,
+      };
+
+      // Додаємо teacherId тільки якщо є вибрані вчителі
+      if (selectedTeacherIds.length > 0) {
+        params.teacherId = selectedTeacherIds.join(",");
+      }
 
       const response = await api.get("/calendar/events", {
-        params: {
-          start: startDate,
-          end: endDate,
-          teacherId: selectedTeacherIds.join(","),
+        params,
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+          Expires: "0",
         },
       });
 
-      console.log("Successfully fetched events:", response.data);
+      console.log("Raw events data:", response.data);
 
       let eventsArray = Array.isArray(response.data)
         ? response.data
         : response.data.events?.rows || [];
 
+      console.log("Processing events:", eventsArray.length);
+
       // Let the backend handle reserved class checks
-      console.log("Checking for expired reserved classes...");
       await api.get("/calendar/check-reserved");
 
       const events = eventsArray.map((event: any) => {
-        let title = event.name || event.title || "";
+        let title = event.name || event.title || event.student_name_text || "";
+
+        // Handle reserved lessons
+        if (event.payment_status === "reserved") {
+          const studentName = event.student_name_text || title;
+          title = `RSVR - ${studentName}`;
+          console.log("Marked as reserved lesson:", title);
+        }
 
         // Handle trial lessons
         if (
           event.class_type === "trial" ||
           event.class_type === "trial lesson"
         ) {
-          title = `Trial - ${title}`;
+          const studentName = event.student_name_text || title;
+          title = `Trial - ${studentName}`;
           console.log("Marked as trial lesson:", title);
-        }
-
-        // Handle reserved lessons
-        if (event.payment_status === "reserved") {
-          title = `RSVR - ${title}`;
-          console.log("Marked as reserved lesson:", title);
         }
 
         const teacherId =
@@ -447,14 +405,12 @@ const Calendar: React.FC = () => {
         // Calculate hours until start for validation
         const hoursUntilStart = tzStart.diff(dayjs(), "hour");
 
-        // Log timezone conversions for debugging
-        console.log("Event timezone conversion:", {
-          eventId: event.id,
-          title: title,
-          originalStart: event.startDate,
-          utcStart: utcStart.format(),
-          tzStart: tzStart.format(),
-          hoursUntilStart,
+        console.log("Processing event:", {
+          id: event.id,
+          title,
+          start: tzStart.format(),
+          end: finalEnd.format(),
+          teacherId,
         });
 
         return {
@@ -482,22 +438,16 @@ const Calendar: React.FC = () => {
         };
       });
 
-      console.log("Processed events:", events.length);
-      setEvents(events);
+      console.log("Processed events:", events);
+      console.log("Events count:", events.length);
 
-      if (selectedTeacherIds.length > 0) {
-        console.log("Filtering events for teachers:", selectedTeacherIds);
-        const filteredEvents = events.filter((event) => {
-          const eventTeacherId = Number(
-            event.teacherId || event.extendedProps?.teacherId
-          );
-          return selectedTeacherIds.includes(eventTeacherId);
-        });
-        console.log("Filtered events:", filteredEvents.length);
-        setDisplayedEvents(filteredEvents);
-      } else {
-        setDisplayedEvents(events);
-      }
+      setEvents(events);
+      setDisplayedEvents(events);
+
+      console.log(
+        "Events state updated. displayedEvents count:",
+        events.length
+      );
     } catch (error) {
       console.error("Error fetching events:", error);
       message.error("Failed to fetch events");
@@ -508,8 +458,13 @@ const Calendar: React.FC = () => {
 
   const checkReservedClasses = async () => {
     try {
-      // Get current time once to ensure consistent comparisons
-      const now = dayjs();
+      // Get current time in user timezone for consistent comparisons
+      const currentTimeInUserTz = dayjs().tz(timezone);
+      console.log(
+        "🕐 Current time in user timezone:",
+        currentTimeInUserTz.format("YYYY-MM-DD HH:mm:ss")
+      );
+      console.log("🕐 User timezone:", timezone);
 
       // Get all reserved events
       const reservedEvents = events.filter(
@@ -518,12 +473,30 @@ const Calendar: React.FC = () => {
           "reserved"
       );
 
+      console.log("📋 Found reserved events:", reservedEvents.length);
+
       // Find events that need to be deleted (less than 12 hours until start)
       const eventsToDelete = reservedEvents.filter((event) => {
+        // event.start вже в часовому поясі користувача, тому використовуємо його без додаткової конвертації
         const startTime = dayjs(event.start);
-        const hoursUntilStart = startTime.diff(now, "hour");
+        const currentTimeInUserTz = dayjs().tz(timezone);
+        const hoursUntilStart = startTime.diff(currentTimeInUserTz, "hour");
+
+        console.log("🔍 Checking event:", {
+          id: event.id,
+          title: event.title,
+          start: startTime.format("YYYY-MM-DD HH:mm:ss"),
+          currentTimeInUserTz: currentTimeInUserTz.format(
+            "YYYY-MM-DD HH:mm:ss"
+          ),
+          hoursUntilStart: hoursUntilStart,
+          willDelete: hoursUntilStart < 12,
+        });
+
         return hoursUntilStart < 12;
       });
+
+      console.log("🗑️ Events to delete:", eventsToDelete.length);
 
       // If we have events to delete
       if (eventsToDelete.length > 0) {
@@ -573,7 +546,10 @@ const Calendar: React.FC = () => {
             id: event.id,
             title: event.title,
             start: dayjs(event.start).format("YYYY-MM-DD HH:mm:ss"),
-            hoursUntilStart: dayjs(event.start).diff(now, "hour"),
+            hoursUntilStart: dayjs(event.start).diff(
+              currentTimeInUserTz,
+              "hour"
+            ),
           }))
         );
       }
@@ -667,26 +643,77 @@ const Calendar: React.FC = () => {
         return;
       }
 
-      const createSingleEvent = async (start: string, end: string) => {
-        // Check if exact time slot exists
-        const timeSlotTaken = await checkExactTimeSlot(start);
-        if (timeSlotTaken) {
-          throw new Error("This exact time slot is already taken");
+      // Check student's remaining classes if student is selected
+      let paymentStatus = "reserved";
+      if (eventForm.studentId) {
+        try {
+          const response = await api.get(
+            `/students/${eventForm.studentId}/remaining-classes`
+          );
+          const remainingClasses = response.data.remainingClasses || 0;
+          paymentStatus = remainingClasses > 0 ? "paid" : "reserved";
+
+          // Silent handling of reserved status
+        } catch (error) {
+          console.error("Error checking remaining classes:", error);
+          paymentStatus = "reserved";
         }
+      }
+
+      const createSingleEvent = async (start: string, end: string) => {
+        console.log("🚀 Creating single event:", {
+          start,
+          end,
+          teacherId: eventForm.teacherId,
+        });
+
+        // Перевіряємо чи час зайнятий
+        const isBusy = await isTimeSlotBusy(start, end);
+        if (isBusy) {
+          throw new Error("This time is already occupied by another event.");
+        }
+
+        // Додаємо логування для діагностики
+        console.log("🔍 Creating event with times:");
+        console.log("Original start:", start);
+        console.log("Original end:", end);
+        console.log("User timezone:", timezone);
+        console.log("DB timezone:", DEFAULT_DB_TIMEZONE);
+
+        // Parse the input dates in the user's timezone
+        const startInUserTz = dayjs.tz(start, timezone);
+        const endInUserTz = dayjs.tz(end, timezone);
+
+        // Convert to UTC for storage
+        const startInUtc = startInUserTz.utc();
+        const endInUtc = endInUserTz.utc();
+
+        console.log(
+          "Start in user timezone:",
+          startInUserTz.format("YYYY-MM-DD HH:mm:ss")
+        );
+        console.log("Start in UTC:", startInUtc.format("YYYY-MM-DD HH:mm:ss"));
+        console.log(
+          "End in user timezone:",
+          endInUserTz.format("YYYY-MM-DD HH:mm:ss")
+        );
+        console.log("End in UTC:", endInUtc.format("YYYY-MM-DD HH:mm:ss"));
 
         const eventData = {
           class_type: eventForm.classType,
           student_id: eventForm.studentId,
           teacher_id: eventForm.teacherId,
           class_status: eventForm.status,
-          payment_status: "reserved",
-          startDate: dayjs(start).tz(DEFAULT_DB_TIMEZONE).format(),
-          endDate: dayjs(end).tz(DEFAULT_DB_TIMEZONE).format(),
+          payment_status: paymentStatus,
+          startDate: startInUtc.format(),
+          endDate: endInUtc.format(),
           duration:
             eventForm.classType === "Trial Lesson"
               ? 30
-              : dayjs(end).diff(dayjs(start), "minute"),
+              : endInUserTz.diff(startInUserTz, "minute"),
         };
+
+        console.log("Sending event data:", eventData);
 
         const response = await api.post("/calendar/events", {
           events: {
@@ -715,12 +742,13 @@ const Calendar: React.FC = () => {
 
         // Check all slots first
         for (const slot of slots) {
-          const timeSlotTaken = await checkExactTimeSlot(slot.start.format());
-          if (timeSlotTaken) {
+          const isBusy = await isTimeSlotBusy(
+            slot.start.format("YYYY-MM-DDTHH:mm:ss"),
+            slot.end.format("YYYY-MM-DDTHH:mm:ss")
+          );
+          if (isBusy) {
             throw new Error(
-              `Time slot ${slot.start.format(
-                "DD.MM.YYYY HH:mm"
-              )} is already taken`
+              `Час ${slot.start.format("DD.MM.YYYY HH:mm")} вже зайнятий`
             );
           }
         }
@@ -736,7 +764,31 @@ const Calendar: React.FC = () => {
 
       message.success("Event(s) created successfully");
       setIsCreateModalOpen(false);
-      fetchEvents();
+
+      // Reset form after successful creation
+      setEventForm({
+        teacherId: null,
+        studentId: null,
+        start: "",
+        end: "",
+        classType: "Regular Lesson",
+        status: "scheduled",
+        duration: "50 min",
+        repeating: {
+          type: "none",
+          days: [],
+          weeks: 2,
+        },
+      });
+      setEventError("");
+      setStudentSearch("");
+
+      console.log("🔄 Calling fetchEvents after creation...");
+      await fetchEvents();
+      console.log("✅ fetchEvents completed after creation");
+
+      // Helper function to update displayedEvents based on current filters
+      updateDisplayedEvents();
     } catch (error: any) {
       console.error("Error creating event:", error);
       message.error(error.message || "Failed to create event");
@@ -744,8 +796,22 @@ const Calendar: React.FC = () => {
   };
 
   const handleDateSelect = async (selectInfo: any) => {
-    const startTime = dayjs(selectInfo.start);
-    const hoursUntilStart = startTime.diff(dayjs(), "hour");
+    // FullCalendar provides dates in local timezone, so we need to parse them correctly
+    const startTime = dayjs.tz(selectInfo.start, timezone);
+    const currentTimeInUserTz = dayjs().tz(timezone);
+    const hoursUntilStart = startTime.diff(currentTimeInUserTz, "hour");
+
+    console.log("📅 Date selected - DETAILED:", {
+      originalStart: selectInfo.start,
+      originalEnd: selectInfo.end,
+      startTime: startTime.format("YYYY-MM-DD HH:mm:ss"),
+      startTimeISO: startTime.toISOString(),
+      currentTime: currentTimeInUserTz.format("YYYY-MM-DD HH:mm:ss"),
+      hoursUntilStart: hoursUntilStart,
+      timezone: timezone,
+      userTimezone: dayjs.tz.guess(),
+      localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
 
     try {
       // Check if trying to create event less than 12 hours in advance
@@ -756,8 +822,7 @@ const Calendar: React.FC = () => {
 
       // If a teacher is already selected in the form, check for overlaps
       if (eventForm.teacherId) {
-        const hasOverlap = await checkLessonOverlap(
-          eventForm.teacherId,
+        const hasOverlap = await isTimeSlotBusy(
           selectInfo.start,
           selectInfo.end
         );
@@ -768,6 +833,31 @@ const Calendar: React.FC = () => {
         }
       }
 
+      // Check if time slot is already occupied
+      const isBusy = await isTimeSlotBusy(selectInfo.start, selectInfo.end);
+
+      if (isBusy) {
+        message.error("This time is already occupied by another event.");
+        return;
+      }
+
+      // Format the time properly in the user's timezone
+      const formattedStart = startTime.format("YYYY-MM-DDTHH:mm:ss");
+      const formattedEnd = dayjs
+        .tz(selectInfo.end, timezone)
+        .format("YYYY-MM-DDTHH:mm:ss");
+
+      console.log("🕐 Time formatting in handleDateSelect:", {
+        originalStart: selectInfo.start,
+        originalEnd: selectInfo.end,
+        formattedStart: formattedStart,
+        formattedEnd: formattedEnd,
+        timezone: timezone,
+        startTimeLocal: dayjs(selectInfo.start).format("YYYY-MM-DD HH:mm:ss"),
+        startTimeUserTz: startTime.format("YYYY-MM-DD HH:mm:ss"),
+        startTimeUTC: startTime.utc().format("YYYY-MM-DD HH:mm:ss"),
+      });
+
       // Check student's remaining classes
       if (eventForm.studentId) {
         const response = await api.get(
@@ -775,23 +865,17 @@ const Calendar: React.FC = () => {
         );
         const remainingClasses = response.data.remainingClasses || 0;
 
-        if (remainingClasses <= 0) {
-          message.warning(
-            "This class will be marked as reserved due to insufficient paid classes"
-          );
-        }
-
         setEventForm((prev) => ({
           ...prev,
-          start: selectInfo.start,
-          end: selectInfo.end,
+          start: formattedStart,
+          end: formattedEnd,
           payment_status: remainingClasses <= 0 ? "reserved" : "paid",
         }));
       } else {
         setEventForm((prev) => ({
           ...prev,
-          start: selectInfo.start,
-          end: selectInfo.end,
+          start: formattedStart,
+          end: formattedEnd,
         }));
       }
 
@@ -805,8 +889,47 @@ const Calendar: React.FC = () => {
   const handleCreateButtonClick = () => {
     console.log("Create button clicked");
     console.log("Current modal state:", isCreateModalOpen);
+
+    // Reset form but preserve teacher if already selected
+    const currentTeacherId = eventForm.teacherId;
+    setEventForm({
+      teacherId: currentTeacherId, // Preserve selected teacher
+      studentId: null,
+      start: "",
+      end: "",
+      classType: "Regular Lesson",
+      status: "scheduled",
+      duration: "50 min",
+      repeating: {
+        type: "none",
+        days: [],
+        weeks: 2,
+      },
+    });
+    setEventError("");
+    setStudentSearch("");
+
     setIsCreateModalOpen(true);
     console.log("Modal state after setState:", true);
+  };
+
+  const resetEventForm = () => {
+    setEventForm({
+      teacherId: null,
+      studentId: null,
+      start: "",
+      end: "",
+      classType: "Regular Lesson",
+      status: "scheduled",
+      duration: "50 min",
+      repeating: {
+        type: "none",
+        days: [],
+        weeks: 2,
+      },
+    });
+    setEventError("");
+    setStudentSearch("");
   };
 
   useEffect(() => {
@@ -889,12 +1012,8 @@ const Calendar: React.FC = () => {
 
     const isNotAvailable = isUnavailableEvent(event);
 
-    // Remove prefixes for display
-    const studentName = event.title
-      .replace(/^Trial\s*-\s*/gi, "")
-      .replace(/^RSVR\s*-\s*/gi, "")
-      .replace(/^Not Available\s*-\s*/gi, "")
-      .trim();
+    // Use the full title without removing RSVR prefix
+    const displayTitle = event.title;
 
     const classTypeDisplay =
       classTypes.find((type) => type.value === classType)?.label || classType;
@@ -936,10 +1055,10 @@ const Calendar: React.FC = () => {
       <div
         className="fc-event-main-content"
         style={{
-          padding: "4px 6px",
+          padding: "2px 4px",
           backgroundColor,
           height: "100%",
-          minHeight: "50px",
+          minHeight: "65px",
           borderLeft: `3px solid ${backgroundColor.slice(0, 7)}`,
           display: "flex",
           flexDirection: "column",
@@ -951,46 +1070,46 @@ const Calendar: React.FC = () => {
         <div style={{ flex: 1 }}>
           <div
             style={{
-              fontSize: "11px",
-              fontWeight: "600",
+              fontSize: "10px",
+              fontWeight: "500",
               color: textColor,
-              lineHeight: "1.2",
-              marginBottom: "2px",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
+              lineHeight: "1.1",
+              marginBottom: "1px",
+              whiteSpace: "normal",
+              overflow: "visible",
+              wordBreak: "break-word",
+              opacity: 0.9,
             }}
           >
             {isNotAvailable ? "Unavailable" : classTypeDisplay}
-            {paymentStatus === "reserved" && " (Reserved)"}
           </div>
-          {!isNotAvailable && studentName && (
+          {!isNotAvailable && displayTitle && (
             <div
               style={{
-                fontSize: "12px",
+                fontSize: "11px",
                 fontWeight: "600",
                 color: textColor,
-                lineHeight: "1.2",
-                marginBottom: "2px",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
+                lineHeight: "1.1",
+                marginBottom: "1px",
+                whiteSpace: "normal",
+                overflow: "visible",
+                wordBreak: "break-word",
               }}
             >
-              {studentName}
+              {displayTitle}
             </div>
           )}
         </div>
         <div
           style={{
-            fontSize: "11px",
+            fontSize: "10px",
             fontWeight: "500",
             color: textColor,
-            lineHeight: "1.2",
+            lineHeight: "1.1",
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
-            opacity: 0.9,
+            opacity: 0.8,
           }}
         >
           {startTime} - {endTime}
@@ -1069,23 +1188,27 @@ const Calendar: React.FC = () => {
 
     try {
       const startDate = dayjs(event.start).tz(DEFAULT_DB_TIMEZONE).format();
+      const endDate = dayjs(event.end).tz(DEFAULT_DB_TIMEZONE).format();
 
-      // Check if exact time slot exists
-      const timeSlotTaken = await checkExactTimeSlot(startDate);
-      if (timeSlotTaken) {
+      // Check if time slot is already occupied
+      const isBusy = await isTimeSlotBusy(startDate, endDate);
+      if (isBusy) {
         dropInfo.revert();
-        message.error("This time slot is already taken");
+        message.error("This time is already occupied by another event.");
         return;
       }
 
-      const endDate = dayjs(event.end).tz(DEFAULT_DB_TIMEZONE).format();
       await calendarApi.updateCalendar(event.id, {
         startDate,
         endDate,
       });
 
       message.success("Event updated successfully");
-      fetchEvents();
+      // Важливо: чекаємо завершення fetchEvents
+      await fetchEvents();
+
+      // Helper function to update displayedEvents based on current filters
+      updateDisplayedEvents();
     } catch (error) {
       console.error("Error updating event:", error);
       message.error("Failed to update event");
@@ -1104,23 +1227,27 @@ const Calendar: React.FC = () => {
 
     try {
       const startDate = dayjs(event.start).tz(DEFAULT_DB_TIMEZONE).format();
+      const endDate = dayjs(event.end).tz(DEFAULT_DB_TIMEZONE).format();
 
-      // Check if exact time slot exists
-      const timeSlotTaken = await checkExactTimeSlot(startDate);
-      if (timeSlotTaken) {
+      // Check if time slot is already occupied
+      const isBusy = await isTimeSlotBusy(startDate, endDate);
+      if (isBusy) {
         resizeInfo.revert();
-        message.error("This time slot is already taken");
+        message.error("This time is already occupied by another event.");
         return;
       }
 
-      const endDate = dayjs(event.end).tz(DEFAULT_DB_TIMEZONE).format();
       await calendarApi.updateCalendar(event.id, {
         startDate,
         endDate,
       });
 
       message.success("Event updated successfully");
-      fetchEvents();
+      // Важливо: чекаємо завершення fetchEvents
+      await fetchEvents();
+
+      // Helper function to update displayedEvents based on current filters
+      updateDisplayedEvents();
     } catch (error) {
       console.error("Error updating event:", error);
       message.error("Failed to update event");
@@ -1168,26 +1295,42 @@ const Calendar: React.FC = () => {
     }
 
     try {
-      await calendarApi.updateCalendar(eventId, {
-        class_status: statusValue,
+      console.log("🔧 handleSaveEvent called with:", {
+        eventId,
+        statusValue,
+        eventDetails,
       });
+
+      // Use POST /calendar/events for updating event status
+      const response = await api.post("/calendar/events", {
+        events: {
+          updated: [
+            {
+              id: parseInt(eventId),
+              class_status: statusValue,
+            },
+          ],
+        },
+      });
+
+      console.log("✅ Event status updated successfully:", response.data);
 
       message.success("Event updated successfully");
       setEventDetails(null);
       setIsEventDetailsOpen(false);
-      fetchEvents();
+
+      // Refresh events to show updated status
+      await fetchEvents();
+
+      // Helper function to update displayedEvents based on current filters
+      updateDisplayedEvents();
     } catch (error) {
-      console.error("Error updating event:", error);
+      console.error("❌ Error updating event status:", error);
       message.error("Failed to update event");
     }
   };
 
   const handleDeleteEvent = async (eventId: string) => {
-    if (eventDetails?.isNotAvailable) {
-      message.error("Cannot delete unavailable time slots");
-      return;
-    }
-
     try {
       const response = await api.delete(`/calendar/events/${eventId}`);
 
@@ -1195,7 +1338,10 @@ const Calendar: React.FC = () => {
         message.success("Event deleted successfully");
         setEventDetails(null);
         setIsEventDetailsOpen(false);
-        fetchEvents();
+        await fetchEvents();
+
+        // Helper function to update displayedEvents based on current filters
+        updateDisplayedEvents();
       }
     } catch (error) {
       console.error("Error deleting event:", error);
@@ -1289,53 +1435,62 @@ const Calendar: React.FC = () => {
   // Додаю функцію для збереження редагованої події
   const handleUpdateEvent = async (updatedData: any) => {
     try {
-      await api.put(`/calendar/events/${updatedData.id}`, updatedData);
+      console.log("Updating event with data:", updatedData);
+
+      // Check if time slot is already occupied
+      if (updatedData.startDate && updatedData.endDate) {
+        const isBusy = await isTimeSlotBusy(
+          updatedData.startDate,
+          updatedData.endDate
+        );
+        if (isBusy) {
+          message.error("This time slot is already occupied by another event");
+          return;
+        }
+      }
+
+      // Use POST /calendar/events for updating events
+      const response = await api.post("/calendar/events", {
+        events: {
+          updated: [updatedData],
+        },
+      });
+
+      console.log("Update response:", response.data);
+
       setIsEditModalOpen(false);
       setEditEventData(null);
-      fetchEvents();
+
+      // Важливо: чекаємо завершення fetchEvents
+      console.log("🔄 Calling fetchEvents after update...");
+      await fetchEvents();
+      console.log("✅ fetchEvents completed after update");
+
+      // Helper function to update displayedEvents based on current filters
+      updateDisplayedEvents();
+
       message.success("Event updated successfully");
     } catch (error) {
+      console.error("Error updating event:", error);
       message.error("Failed to update event");
     }
   };
 
-  // Add test function for creating a reserved class
-  const createTestReservedClass = async () => {
-    try {
-      // Create a class that starts in 13 hours (will be deleted in ~1 hour)
-      const startTime = dayjs().add(13, "hours");
-      const endTime = startTime.add(50, "minutes");
-
-      const testEvent = {
-        title: "Test Student",
-        start: startTime.format(),
-        end: endTime.format(),
-        payment_status: "reserved",
-        class_type: "regular",
-        teacherId: selectedTeacherIds[0], // Use first selected teacher
-        studentId: "test_student",
-      };
-
-      // Create the event
-      const response = await api.post("/calendar/events", testEvent);
-
-      if (response.data) {
-        message.success(
-          "Created test reserved class. It will be automatically removed in about 1 hour"
-        );
-        console.log("Created test class:", {
-          ...testEvent,
-          hoursUntilStart: 13,
-          willBeDeletedIn: 1,
+  // Helper function to update displayedEvents based on current filters
+  const updateDisplayedEvents = () => {
+    setTimeout(() => {
+      if (selectedTeacherIds.length > 0) {
+        const filteredEvents = events.filter((event) => {
+          const eventTeacherId = Number(
+            event.teacherId || event.extendedProps?.teacherId
+          );
+          return selectedTeacherIds.includes(eventTeacherId);
         });
-
-        // Refresh calendar to show new event
-        fetchEvents();
+        setDisplayedEvents(filteredEvents);
+      } else {
+        setDisplayedEvents(events);
       }
-    } catch (error) {
-      console.error("Failed to create test class:", error);
-      message.error("Failed to create test class");
-    }
+    }, 100);
   };
 
   return (
@@ -1415,12 +1570,16 @@ const Calendar: React.FC = () => {
             background: "#1a1f2e",
             padding: "8px 0 4px 0",
             marginBottom: 0,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
           }}
         >
+          <div style={{ flex: 1 }}></div>
           <Button
             type="primary"
             icon={<PlusOutlined />}
-            onClick={() => setIsCreateModalOpen(true)}
+            onClick={handleCreateButtonClick}
             style={{ height: 36, fontSize: 15 }}
           >
             Create Event
@@ -1488,7 +1647,10 @@ const Calendar: React.FC = () => {
         <Modal
           title="Create Event"
           open={isCreateModalOpen}
-          onCancel={() => setIsCreateModalOpen(false)}
+          onCancel={() => {
+            setIsCreateModalOpen(false);
+            resetEventForm();
+          }}
           footer={null}
           width={400}
           centered
@@ -1593,14 +1755,6 @@ const Calendar: React.FC = () => {
                   { value: "student_no_show", label: "Student No Show" },
                   { value: "teacher_no_show", label: "Teacher No Show" },
                   { value: "cancelled", label: "Cancelled" },
-                  ...([
-                    "manager",
-                    "accountant",
-                    "administrator",
-                    "super_admin",
-                  ].includes(getUserRole())
-                    ? [{ value: "teacher_no_show", label: "Teacher not show" }]
-                    : []),
                 ]}
                 style={{ width: "100%" }}
               />
@@ -1610,14 +1764,34 @@ const Calendar: React.FC = () => {
               <DatePicker
                 showTime
                 format="YYYY-MM-DD HH:mm"
-                value={eventForm.start ? dayjs(eventForm.start) : null}
+                value={
+                  eventForm.start ? dayjs.tz(eventForm.start, timezone) : null
+                }
                 onChange={(v) => {
                   if (v) {
                     const duration =
                       eventForm.classType === "Trial Lesson"
                         ? 30
-                        : parseInt(eventForm.duration);
+                        : parseInt(eventForm.duration.replace(" min", ""));
                     const end = v.add(duration, "minute");
+
+                    console.log("📅 DatePicker onChange - DETAILED:", {
+                      selectedValue: v.format("YYYY-MM-DD HH:mm:ss"),
+                      selectedValueISO: v.toISOString(),
+                      timezone: timezone,
+                      duration: duration,
+                      durationString: eventForm.duration,
+                      calculatedEnd: end.format("YYYY-MM-DD HH:mm:ss"),
+                      calculatedEndISO: end.toISOString(),
+                      selectedValueLocal: dayjs(v).format(
+                        "YYYY-MM-DD HH:mm:ss"
+                      ),
+                      selectedValueUserTz: v
+                        .tz(timezone)
+                        .format("YYYY-MM-DD HH:mm:ss"),
+                      selectedValueUTC: v.utc().format("YYYY-MM-DD HH:mm:ss"),
+                    });
+
                     setEventForm((prev) => ({
                       ...prev,
                       start: v.format("YYYY-MM-DDTHH:mm:ss"),
@@ -1903,14 +2077,59 @@ const Calendar: React.FC = () => {
                     if (!eventDetails || eventDetails.isNotAvailable) return;
 
                     try {
-                      await api.put(`/calendar/events/${eventDetails.id}`, {
-                        startDate: eventDetails.start,
-                        endDate: eventDetails.end,
+                      const startDate = dayjs(eventDetails.start)
+                        .tz(DEFAULT_DB_TIMEZONE)
+                        .format("YYYY-MM-DDTHH:mm:ss");
+                      const endDate = dayjs(eventDetails.end)
+                        .tz(DEFAULT_DB_TIMEZONE)
+                        .format("YYYY-MM-DDTHH:mm:ss");
+
+                      console.log("Updating event with data:", {
+                        id: eventDetails.id,
+                        startDate,
+                        endDate,
                         teacher_id: eventDetails.teacherId,
                         class_status: eventDetails.class_status,
                       });
+
+                      // Use POST /calendar/events for updating events
+                      const response = await api.post("/calendar/events", {
+                        events: {
+                          updated: [
+                            {
+                              id: eventDetails.id,
+                              startDate,
+                              endDate,
+                              teacher_id: eventDetails.teacherId,
+                              class_status: eventDetails.class_status,
+                            },
+                          ],
+                        },
+                      });
+
+                      console.log("Update response:", response.data);
+
                       setIsEditingStatus(false);
-                      fetchEvents();
+                      setIsEventDetailsOpen(false);
+
+                      // Очищаємо стейт подій
+                      setEvents([]);
+                      setDisplayedEvents([]);
+
+                      // Оновлюємо вид календаря
+                      if (calendarRef.current) {
+                        const calendarApi = calendarRef.current.getApi();
+                        calendarApi.gotoDate(dayjs(startDate).toDate());
+
+                        // Чекаємо поки календар оновиться
+                        await new Promise((resolve) =>
+                          setTimeout(resolve, 100)
+                        );
+
+                        // Завантажуємо події заново
+                        await fetchEvents();
+                      }
+
                       message.success("Event updated successfully");
                     } catch (error) {
                       console.error("Error updating event:", error);

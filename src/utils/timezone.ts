@@ -8,8 +8,8 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.extend(customParseFormat);
 
-// Default timezone is PST (database timezone)
-export const DEFAULT_DB_TIMEZONE = 'America/Los_Angeles'; // PST
+// Default timezone is UTC (database timezone)
+export const DEFAULT_DB_TIMEZONE = 'UTC';
 
 interface TimezoneInfo {
   value: string;

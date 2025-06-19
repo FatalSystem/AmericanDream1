@@ -36,7 +36,7 @@ export const calendarApi = {
   },
   
   updateCalendar: async (id: string, eventData: any) => {
-    const response = await api.put(`/calendar/events/${id}`, eventData);
+    const response = await api.put(`/calendars/${id}`, eventData);
     return response.data;
   },
   
