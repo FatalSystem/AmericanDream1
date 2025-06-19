@@ -8,9 +8,15 @@ export const calendarApi = {
       ...eventData,
       startDate: eventData.start_date,
       endDate: eventData.end_date,
+      teacherName: eventData.teacher_name,
     };
     delete data.start_date;
     delete data.end_date;
+    delete data.teacher_name;
+    
+    console.log("createCalendar - original eventData:", eventData);
+    console.log("createCalendar - processed data:", data);
+    
     const response = await fetch('/api/proxy/calendar/events', {
       method: 'POST',
       headers: {

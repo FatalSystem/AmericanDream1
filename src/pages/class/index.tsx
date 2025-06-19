@@ -6,12 +6,20 @@ import { Table, Button, Spin } from "antd";
 import type { TableColumnsType } from "antd";
 import { LoadingOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
+import timezone from "dayjs/plugin/timezone";
+import utc from "dayjs/plugin/utc";
+import { useTimezone } from "../../contexts/TimezoneContext";
+import { DEFAULT_DB_TIMEZONE } from "../../utils/timezone";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 interface AddClassForm {
   date: string;
   studentId: string;
   teacherId: string;
   status: string;
+  classType: string;
 }
 
 interface Teacher {
@@ -123,6 +131,7 @@ function CustomDropdown({
 
 export default function ClassesPage() {
   const navigate = useNavigate();
+  const { timezone } = useTimezone();
   const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -131,7 +140,8 @@ export default function ClassesPage() {
     date: "",
     studentId: "",
     teacherId: "",
-    status: "Given",
+    status: "scheduled",
+    classType: "regular",
   });
   const [formError, setFormError] = useState<string | null>(null);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -213,25 +223,37 @@ export default function ClassesPage() {
 
       const mapped = events.map((event: any) => {
         console.log("Processing event:", event);
+
+        // Use teacher_id instead of resourceId for consistency with calendar
+        const teacherId =
+          event.teacher_id || event.teacherId || event.resourceId;
         const teacherName = teachers.find(
-          (t) => t.id === event.resourceId,
+          (t) => t.id === teacherId?.toString()
         )?.name;
         console.log(
           "Found teacher name:",
           teacherName,
-          "for resourceId:",
-          event.resourceId,
+          "for teacherId:",
+          teacherId
         );
+
+        // Convert UTC date to user timezone for display
+        const startDate = event.startDate
+          ? dayjs.utc(event.startDate).tz(timezone)
+          : null;
+        const endDate = event.endDate
+          ? dayjs.utc(event.endDate).tz(timezone)
+          : null;
 
         const mappedEvent = {
           id: event.id?.toString() || "",
-          studentId: event.student_name || "",
-          teacherId: event.resourceId || "",
+          studentId: event.student_id || event.studentId || "",
+          teacherId: teacherId?.toString() || "",
           studentName: event.student_name_text || "Unknown Student",
           teacherName: teacherName || "Unknown Teacher",
-          date: event.startDate?.split("T")[0] || "",
+          date: startDate?.format("YYYY-MM-DD") || "",
           status: event.class_status || "scheduled",
-          time: event.startDate?.split("T")[1]?.slice(0, 5) || "",
+          time: startDate?.format("HH:mm") || "",
           type: event.class_type || "regular",
         };
         console.log("Mapped event:", mappedEvent);
@@ -252,7 +274,7 @@ export default function ClassesPage() {
     } finally {
       setLoading(false);
     }
-  }, [teachers, students]);
+  }, [teachers, students, timezone]);
 
   // First load teachers and students
   useEffect(() => {
@@ -276,6 +298,30 @@ export default function ClassesPage() {
     }
   }, [teachers, students, fetchClasses]);
 
+  // Add effect to check for calendar updates
+  useEffect(() => {
+    const checkForUpdates = () => {
+      const lastUpdate = localStorage.getItem("calendarEventsUpdated");
+      if (lastUpdate) {
+        const lastUpdateTime = parseInt(lastUpdate);
+        const currentTime = Date.now();
+
+        // If the update was recent (within last 5 seconds), refresh data
+        if (currentTime - lastUpdateTime < 5000) {
+          console.log("Calendar events updated, refreshing classes data");
+          fetchClasses();
+          // Clear the update flag to avoid repeated refreshes
+          localStorage.removeItem("calendarEventsUpdated");
+        }
+      }
+    };
+
+    // Check for updates every 2 seconds
+    const interval = setInterval(checkForUpdates, 2000);
+
+    return () => clearInterval(interval);
+  }, [fetchClasses]);
+
   const handleOpenModal = () => {
     setShowModal(true);
     setFormError(null);
@@ -283,7 +329,8 @@ export default function ClassesPage() {
       date: "",
       studentId: "",
       teacherId: "",
-      status: "Given",
+      status: "scheduled",
+      classType: "regular",
     });
   };
 
@@ -300,18 +347,48 @@ export default function ClassesPage() {
     }
 
     try {
-      const [date, time] = form.date.split("T");
-      const response = await api.post("/lessons", {
-        student_id: form.studentId,
-        teacher_id: form.teacherId,
-        start_date: `${date}T${time}`,
-        class_status: form.status,
-        class_type: "regular",
+      // Parse the datetime in user timezone
+      const startInUserTz = dayjs.tz(form.date, timezone);
+      const endInUserTz = startInUserTz.add(
+        form.classType === "trial" ? 30 : 50,
+        "minute"
+      );
+
+      // Convert to UTC for storage
+      const startInUtc = startInUserTz.utc();
+      const endInUtc = endInUserTz.utc();
+
+      console.log("Creating class with times:", {
+        startInUserTz: startInUserTz.format("YYYY-MM-DD HH:mm:ss"),
+        endInUserTz: endInUserTz.format("YYYY-MM-DD HH:mm:ss"),
+        startInUtc: startInUtc.format("YYYY-MM-DD HH:mm:ss"),
+        endInUtc: endInUtc.format("YYYY-MM-DD HH:mm:ss"),
+      });
+
+      // Use the same API endpoint as calendar
+      const response = await api.post("/calendar/events", {
+        events: {
+          added: [
+            {
+              class_type: form.classType,
+              student_id: parseInt(form.studentId),
+              teacher_id: parseInt(form.teacherId),
+              class_status: form.status,
+              payment_status: "reserved",
+              startDate: startInUtc.format(),
+              endDate: endInUtc.format(),
+              duration: endInUserTz.diff(startInUserTz, "minute"),
+            },
+          ],
+        },
       });
 
       console.log("Added class:", response.data);
       setShowModal(false);
       fetchClasses();
+
+      // Notify calendar component that events have been updated
+      localStorage.setItem("calendarEventsUpdated", Date.now().toString());
     } catch (err) {
       console.error("Error adding class:", err);
       if (err.response?.status === 401) {
@@ -320,6 +397,28 @@ export default function ClassesPage() {
         return;
       }
       setFormError("Failed to add class. Please try again.");
+    }
+  };
+
+  const handleDeleteClass = async (classId: string) => {
+    try {
+      const response = await api.delete(`/calendar/events/${classId}`);
+
+      if (response.data) {
+        console.log("Deleted class:", response.data);
+        fetchClasses();
+
+        // Notify calendar component that events have been updated
+        localStorage.setItem("calendarEventsUpdated", Date.now().toString());
+      }
+    } catch (err) {
+      console.error("Error deleting class:", err);
+      if (err.response?.status === 401) {
+        localStorage.removeItem("token");
+        navigate("/login");
+        return;
+      }
+      console.error("Failed to delete class");
     }
   };
 
@@ -337,9 +436,17 @@ export default function ClassesPage() {
       title: "Date",
       dataIndex: "date",
       key: "date",
-      width: "25%",
+      width: "20%",
       render: (text: string) => <span>{dayjs(text).format("DD.MM.YYYY")}</span>,
       sorter: (a, b) => dayjs(a.date).unix() - dayjs(b.date).unix(),
+    },
+    {
+      title: "Time",
+      dataIndex: "time",
+      key: "time",
+      width: "15%",
+      render: (text: string) => <span>{text}</span>,
+      sorter: (a, b) => a.time.localeCompare(b.time),
     },
     {
       title: "Student",
@@ -353,7 +460,7 @@ export default function ClassesPage() {
       title: "Teacher",
       dataIndex: "teacherName",
       key: "teacherName",
-      width: "25%",
+      width: "20%",
       render: (text: string) => text,
       sorter: (a, b) => a.teacherName.localeCompare(b.teacherName),
     },
@@ -361,7 +468,7 @@ export default function ClassesPage() {
       title: "Status",
       dataIndex: "status",
       key: "status",
-      width: "25%",
+      width: "20%",
       render: (status: string) => (
         <span
           style={{
@@ -421,6 +528,18 @@ export default function ClassesPage() {
                 />
               </div>
               <CustomDropdown
+                label="Class Type"
+                options={[
+                  { value: "trial", label: "Trial Lesson" },
+                  { value: "regular", label: "Regular Lesson" },
+                  { value: "instant", label: "Instant Lesson" },
+                  { value: "group", label: "Group Lesson" },
+                ]}
+                value={form.classType}
+                onChange={(v) => setForm({ ...form, classType: v })}
+                placeholder="Select Class Type"
+              />
+              <CustomDropdown
                 label="Student"
                 options={students.map((s) => ({
                   value: s.id,
@@ -443,10 +562,11 @@ export default function ClassesPage() {
               <CustomDropdown
                 label="Status"
                 options={[
-                  { value: "Given", label: "Given" },
-                  { value: "No show student", label: "No show student" },
-                  { value: "No show teacher", label: "No show teacher" },
-                  { value: "Cancelled", label: "Cancelled" },
+                  { value: "scheduled", label: "Scheduled" },
+                  { value: "given", label: "Given" },
+                  { value: "student_no_show", label: "Student No Show" },
+                  { value: "teacher_no_show", label: "Teacher No Show" },
+                  { value: "cancelled", label: "Cancelled" },
                 ]}
                 value={form.status}
                 onChange={(v) => setForm({ ...form, status: v })}

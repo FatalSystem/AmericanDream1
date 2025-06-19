@@ -8,12 +8,13 @@ import { toast } from "react-toastify";
 
 console.log("=== EventCreateForm.tsx loaded ===");
 
-type LessonStatus =
+export type LessonStatus =
   | "scheduled"
   | "completed"
   | "cancelled"
   | "student_no_show"
   | "teacher_no_show";
+
 type PaymentStatus = "paid" | "reserved";
 
 interface Student {
@@ -29,6 +30,9 @@ interface EventCreateFormProps {
   timezone?: string;
   start?: Date | null;
   end?: Date | null;
+  initialTeacherId?: string;
+  initialClassType?: string;
+  initialClassStatus?: string;
 }
 
 const classTypes = [
@@ -271,10 +275,58 @@ export default function EventCreateForm({
   timezone = getDefaultTimezone(),
   start: defaultStart = null,
   end: defaultEnd = null,
+  initialTeacherId,
+  initialClassType = "Regular-Lesson",
+  initialClassStatus = "scheduled",
 }: EventCreateFormProps) {
+  console.log("EventCreateForm props:", {
+    initialTeacherId,
+    initialClassType,
+    initialClassStatus,
+    teachersCount: teachers.length,
+    teachers: teachers.map((t) => ({
+      id: t.id,
+      name: `${t.first_name} ${t.last_name}`,
+    })),
+  });
+
   console.log("Initial render with class types:", classTypes);
 
-  const [teacherId, setTeacherId] = useState(teachers[0]?.id || "");
+  const [selectedTeacher, setSelectedTeacher] = useState<string>(
+    initialTeacherId || (teachers.length > 0 ? String(teachers[0].id) : "")
+  );
+
+  console.log(
+    "TeacherId state:",
+    selectedTeacher,
+    "initialTeacherId:",
+    initialTeacherId,
+    "teachers available:",
+    teachers.map((t) => ({ id: t.id, name: `${t.first_name} ${t.last_name}` }))
+  );
+
+  // Update teacherId when initialTeacherId changes
+  useEffect(() => {
+    console.log("useEffect triggered - initialTeacherId changed:", {
+      initialTeacherId,
+      currentSelectedTeacher: selectedTeacher,
+      teachers: teachers.map((t) => ({
+        id: t.id,
+        name: `${t.first_name} ${t.last_name}`,
+      })),
+    });
+
+    if (initialTeacherId && initialTeacherId !== selectedTeacher) {
+      console.log(
+        "Updating teacherId from",
+        selectedTeacher,
+        "to",
+        initialTeacherId
+      );
+      setSelectedTeacher(initialTeacherId);
+    }
+  }, [initialTeacherId, selectedTeacher, teachers]);
+
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [start, setStart] = useState(
     defaultStart ? defaultStart.toISOString().slice(0, 16) : ""
@@ -285,17 +337,18 @@ export default function EventCreateForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [classStatus, setClassStatus] = useState<LessonStatus>("scheduled");
+  const [classStatus, setClassStatus] = useState<LessonStatus>(
+    initialClassStatus as LessonStatus
+  );
   const [classStatusDropdownOpen, setClassStatusDropdownOpen] = useState(false);
 
   const [classType, setClassType] = useState(() => {
-    const defaultType = "Regular-Lesson";
     console.log("Initializing class type:", {
-      defaultType,
-      isValid: isValidClassType(defaultType),
+      initialType: initialClassType,
+      isValid: isValidClassType(initialClassType),
       availableTypes: classTypes.map((t) => t.value),
     });
-    return defaultType;
+    return initialClassType;
   });
   const [duration, setDuration] = useState(50);
   const [durationDropdownOpen, setDurationDropdownOpen] = useState(false);
@@ -468,15 +521,15 @@ export default function EventCreateForm({
     try {
       // Validate required fields
       console.log("Validating form data:", {
-        teacherId,
+        selectedTeacher,
         start,
         end,
-        selectedTeacher: teachers.find(
-          (t) => String(t.id) === String(teacherId)
+        foundTeacher: teachers.find(
+          (t) => String(t.id) === String(selectedTeacher)
         ),
       });
 
-      if (!teacherId) {
+      if (!selectedTeacher) {
         setLoading(false);
         toast.error("Please select a teacher");
         return;
@@ -511,12 +564,12 @@ export default function EventCreateForm({
       // Check for overlaps
       const teacherEvents = existingEvents.events.rows.filter((event: any) => {
         const isTeacherMatch =
-          String(event.resourceId) === String(teacherId) ||
-          String(event.teacher_id) === String(teacherId);
+          String(event.resourceId) === String(selectedTeacher) ||
+          String(event.teacher_id) === String(selectedTeacher);
 
         console.log("Checking event:", {
           event,
-          teacherId,
+          teacherId: selectedTeacher,
           eventTeacherId: event.teacher_id,
           eventResourceId: event.resourceId,
           isTeacherMatch,
@@ -621,7 +674,7 @@ export default function EventCreateForm({
         const eventData = {
           class_type: classType,
           student_id: 0,
-          teacher_id: parseInt(String(teacherId)),
+          teacher_id: parseInt(String(selectedTeacher)),
           class_status: "scheduled" as LessonStatus,
           payment_status: "reserved" as PaymentStatus,
           start_date: startUTC,
@@ -671,17 +724,36 @@ export default function EventCreateForm({
           classTypeDetails.value === "Group-Lesson"
             ? parseInt(selectedGroupId)
             : parseInt(studentId),
-        teacher_id: parseInt(String(teacherId)),
+        resourceId: parseInt(String(selectedTeacher)), // Add resourceId for backend compatibility
+        teacher_id: parseInt(String(selectedTeacher)),
+        teacherId: parseInt(String(selectedTeacher)),
         class_status: classStatus,
         payment_status: paymentStatusToUse,
         start_date: startUTC,
         end_date: endUTC,
         duration: Number(duration),
+        teacher_name: (() => {
+          const teacher = teachers.find(
+            (t) => String(t.id) === String(selectedTeacher)
+          );
+          return teacher
+            ? `${teacher.first_name} ${teacher.last_name}`
+            : undefined;
+        })(),
       };
 
-      console.log("Creating event with data:", eventData);
+      console.log("Creating/updating event with data:", eventData);
+      console.log("Current teacherId:", selectedTeacher);
+      console.log(
+        "Available teachers:",
+        teachers.map((t) => ({
+          id: t.id,
+          name: `${t.first_name} ${t.last_name}`,
+        }))
+      );
 
-      await calendarApi.createCalendar(eventData);
+      const response = await calendarApi.createCalendar(eventData);
+      console.log("Create calendar response:", response);
       toast.success("Event created successfully");
       onClose();
       if (onSuccess) {
@@ -696,8 +768,8 @@ export default function EventCreateForm({
     }
   };
 
-  const selectedTeacher = teachers.find(
-    (t) => String(t.id) === String(teacherId)
+  const selectedTeacherObj = teachers.find(
+    (t) => String(t.id) === String(selectedTeacher)
   );
   const selectedClassType = availableClassTypes.find(
     (type) => type.value === classType
@@ -742,10 +814,10 @@ export default function EventCreateForm({
               <span className="flex items-center gap-2">
                 <span
                   className="inline-block size-4 rounded-full border"
-                  style={{ background: selectedTeacher?.color || "#2563eb" }}
+                  style={{ background: selectedTeacherObj?.color || "#2563eb" }}
                 ></span>
-                {selectedTeacher
-                  ? `${selectedTeacher.first_name} ${selectedTeacher.last_name}`
+                {selectedTeacherObj
+                  ? `${selectedTeacherObj.first_name} ${selectedTeacherObj.last_name}`
                   : "Select teacher"}
               </span>
               <svg
@@ -771,10 +843,10 @@ export default function EventCreateForm({
                     type="button"
                     key={t.id}
                     className={`dropdown-item ${
-                      String(t.id) === String(teacherId) ? "selected" : ""
+                      String(t.id) === String(selectedTeacher) ? "selected" : ""
                     }`}
                     onClick={() => {
-                      setTeacherId(t.id);
+                      setSelectedTeacher(String(t.id));
                       setDropdownOpen(false);
                     }}
                     style={{ color: "#222" }}
