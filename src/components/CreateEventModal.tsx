@@ -32,9 +32,6 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
     top: "50%",
     duration: 3,
     maxCount: 1,
-    style: {
-      marginTop: "-20vh",
-    },
   });
 
   const handleSubmit = async () => {
