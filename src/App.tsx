@@ -1,5 +1,6 @@
 import { RouterProvider } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import { TimezoneProvider } from "./contexts/TimezoneContext";
 import routes from "./route";
 import { ClassModalProvider } from "./contexts/ClassModalContext";
@@ -10,7 +11,18 @@ function App() {
       <TimezoneProvider>
         <ClassModalProvider>
           <RouterProvider router={routes} />
-          <ToastContainer />
+          <ToastContainer
+            position="top-right"
+            autoClose={3000}
+            hideProgressBar={false}
+            newestOnTop
+            closeOnClick
+            rtl={false}
+            pauseOnFocusLoss
+            draggable
+            pauseOnHover
+            theme="light"
+          />
         </ClassModalProvider>
       </TimezoneProvider>
     </main>

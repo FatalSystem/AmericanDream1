@@ -81,6 +81,12 @@ const CLASS_STATUS_OPTIONS = [
 // Gerçek class type ID'leri - sadece bunları göster
 const VALID_CLASS_TYPE_IDS = [1, 2, 3]; // Trial-Lesson, Regular-Lesson, Training
 
+// Add function to check if user has access to Training type
+const hasTrainingAccess = () => {
+  const userRole = localStorage.getItem("role");
+  return userRole === "accountant" || userRole === "super_admin";
+};
+
 const getStatusColor = (status: string): string => {
   switch (status.toLowerCase()) {
     case "completed":
@@ -187,7 +193,7 @@ const ClassManage: React.FC = () => {
 
       console.log(
         "Processed lessons data:",
-        JSON.stringify(lessonsData, null, 2),
+        JSON.stringify(lessonsData, null, 2)
       );
       console.log("Lessons count:", lessonsData.length);
 
@@ -264,6 +270,17 @@ const ClassManage: React.FC = () => {
       return;
     }
 
+    // Check if trying to create Training class without permission
+    const selectedType = classTypes.find(
+      (ct) => ct.id === parseInt(selectedClassType)
+    );
+    if (selectedType?.name === "Training" && !hasTrainingAccess()) {
+      toast.error("You don't have permission to create Training classes.", {
+        theme: "dark",
+      });
+      return;
+    }
+
     try {
       // Prepare lesson data with time information
       const lessonData = {
@@ -303,18 +320,37 @@ const ClassManage: React.FC = () => {
 
   const deleteLesson = async (id: number) => {
     try {
+      // Find the lesson to check if it's a Training type
+      const lessonToDelete = lessons.find((lesson) => lesson.id === id);
+      if (
+        lessonToDelete?.class_type.name === "Training" &&
+        !hasTrainingAccess()
+      ) {
+        toast.error("You don't have permission to delete Training classes.", {
+          theme: "dark",
+        });
+        return;
+      }
+
       await api.delete(`/lessons/${id}`);
       setLessons((prevLessons) =>
-        prevLessons.filter((lesson) => lesson.id !== id),
+        prevLessons.filter((lesson) => lesson.id !== id)
       );
       toast.success("Lesson deleted successfully!", { theme: "dark" });
     } catch (error: any) {
-      console.error("Error deleting lesson:", error);
       handleApiError(error);
     }
   };
 
   const openEditLesson = (lesson: Lesson) => {
+    // Check if trying to edit Training class without permission
+    if (lesson.class_type.name === "Training" && !hasTrainingAccess()) {
+      toast.error("You don't have permission to edit Training classes.", {
+        theme: "dark",
+      });
+      return;
+    }
+
     setSelectedLesson(lesson);
     setClassDate(lesson.lesson_date);
     setSelectedStudent(lesson.Student.id.toString());
@@ -328,7 +364,7 @@ const ClassManage: React.FC = () => {
       if (lesson.start_time) {
         const userTimeString = convertTimeToUserTimezone(
           lesson.start_time,
-          timezone,
+          timezone
         );
         if (userTimeString) {
           // Format as HH:MM for the time input field
@@ -345,7 +381,7 @@ const ClassManage: React.FC = () => {
       if (lesson.end_time) {
         const userTimeString = convertTimeToUserTimezone(
           lesson.end_time,
-          timezone,
+          timezone
         );
         if (userTimeString) {
           // Format as HH:MM for the time input field
@@ -370,6 +406,17 @@ const ClassManage: React.FC = () => {
   const updateLesson = async () => {
     if (!selectedLesson) return;
 
+    // Check if trying to update to Training class without permission
+    const selectedType = classTypes.find(
+      (ct) => ct.id === parseInt(selectedClassType)
+    );
+    if (selectedType?.name === "Training" && !hasTrainingAccess()) {
+      toast.error("You don't have permission to update to Training classes.", {
+        theme: "dark",
+      });
+      return;
+    }
+
     try {
       // Prepare lesson data with time information
       const lessonData = {
@@ -387,7 +434,7 @@ const ClassManage: React.FC = () => {
       console.log("Updating lesson with data:", lessonWithTime);
       const res = await api.put(
         `/lessons/${selectedLesson.id}`,
-        lessonWithTime,
+        lessonWithTime
       );
 
       setLessons([...res.data.lessons]);
@@ -447,7 +494,7 @@ const ClassManage: React.FC = () => {
       if (lesson.start_time) {
         const userStartTime = convertTimeToUserTimezone(
           lesson.start_time,
-          timezone,
+          timezone
         );
         if (userStartTime) {
           formattedStartTime = formatTime(userStartTime, "HH:mm");
@@ -456,7 +503,7 @@ const ClassManage: React.FC = () => {
           const dayShift = getDayShift(
             lesson.start_time,
             DEFAULT_DB_TIMEZONE,
-            timezone,
+            timezone
           );
           if (dayShift !== 0 && lesson.lesson_date) {
             adjustedDate = dayjs(lesson.lesson_date)
@@ -470,7 +517,7 @@ const ClassManage: React.FC = () => {
       if (lesson.end_time) {
         const userEndTime = convertTimeToUserTimezone(
           lesson.end_time,
-          timezone,
+          timezone
         );
         if (userEndTime) {
           formattedEndTime = formatTime(userEndTime, "HH:mm");
@@ -513,7 +560,7 @@ const ClassManage: React.FC = () => {
   const prepareTimeData = (
     lessonData: any,
     startTimeValue: string,
-    endTimeValue: string,
+    endTimeValue: string
   ) => {
     // Convert times to database timezone (PST)
     const startTimeDb = startTimeValue
@@ -530,7 +577,7 @@ const ClassManage: React.FC = () => {
       const dayShift = getDayShift(
         startTimeValue,
         timezone,
-        DEFAULT_DB_TIMEZONE,
+        DEFAULT_DB_TIMEZONE
       );
       if (dayShift !== 0) {
         // Adjust the date by the number of days shifted
@@ -800,8 +847,8 @@ const ClassManage: React.FC = () => {
                   {students
                     ?.sort((a, b) =>
                       `${a.first_name} ${a.last_name}`.localeCompare(
-                        `${b.first_name} ${b.last_name}`,
-                      ),
+                        `${b.first_name} ${b.last_name}`
+                      )
                     )
                     .map((student) => (
                       <option key={student.id} value={student.id}>
@@ -824,8 +871,8 @@ const ClassManage: React.FC = () => {
                   {teachers
                     .sort((a, b) =>
                       `${a.first_name} ${a.last_name}`.localeCompare(
-                        `${b.first_name} ${b.last_name}`,
-                      ),
+                        `${b.first_name} ${b.last_name}`
+                      )
                     )
                     .map((teacher) => (
                       <option key={teacher.id} value={teacher.id}>
@@ -846,9 +893,15 @@ const ClassManage: React.FC = () => {
                 >
                   <option value="">Select Class Type</option>
                   {classTypes
-                    .filter((classType) =>
-                      VALID_CLASS_TYPE_IDS.includes(classType.id),
-                    )
+                    .filter((classType) => {
+                      if (classType.name === "Training") {
+                        return (
+                          hasTrainingAccess() &&
+                          VALID_CLASS_TYPE_IDS.includes(classType.id)
+                        );
+                      }
+                      return VALID_CLASS_TYPE_IDS.includes(classType.id);
+                    })
                     .map((classType) => (
                       <option key={classType.id} value={classType.id}>
                         {classType.name}
@@ -958,8 +1011,8 @@ const ClassManage: React.FC = () => {
                   {students
                     ?.sort((a, b) =>
                       `${a.first_name} ${a.last_name}`.localeCompare(
-                        `${b.first_name} ${b.last_name}`,
-                      ),
+                        `${b.first_name} ${b.last_name}`
+                      )
                     )
                     .map((student) => (
                       <option key={student.id} value={student.id}>
@@ -982,8 +1035,8 @@ const ClassManage: React.FC = () => {
                   {teachers
                     .sort((a, b) =>
                       `${a.first_name} ${a.last_name}`.localeCompare(
-                        `${b.first_name} ${b.last_name}`,
-                      ),
+                        `${b.first_name} ${b.last_name}`
+                      )
                     )
                     .map((teacher) => (
                       <option key={teacher.id} value={teacher.id}>
@@ -1005,7 +1058,7 @@ const ClassManage: React.FC = () => {
                   <option value="">Select Class Type</option>
                   {classTypes
                     .filter((classType) =>
-                      VALID_CLASS_TYPE_IDS.includes(classType.id),
+                      VALID_CLASS_TYPE_IDS.includes(classType.id)
                     )
                     .map((classType) => (
                       <option key={classType.id} value={classType.id}>

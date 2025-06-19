@@ -1,6 +1,15 @@
 import React, { useState } from "react";
-import { Modal, Form, Input, DatePicker, TimePicker, Select } from "antd";
+import {
+  Modal,
+  Form,
+  Input,
+  DatePicker,
+  TimePicker,
+  Select,
+  message,
+} from "antd";
 import dayjs from "dayjs";
+import "./CreateEventModal.css";
 
 interface CreateEventModalProps {
   isOpen: boolean;
@@ -17,6 +26,16 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
 }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+
+  // Configure message position to be in the center
+  message.config({
+    top: "50%",
+    duration: 3,
+    maxCount: 1,
+    style: {
+      marginTop: "-20vh",
+    },
+  });
 
   const handleSubmit = async () => {
     try {
@@ -41,6 +60,12 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
       onClose();
     } catch (error) {
       console.error("Validation failed:", error);
+      // Show error message in the center of the screen
+      message.error({
+        content:
+          "Cannot add a lesson for this student less than 12 hours ahead without paid classes.",
+        className: "custom-error-message",
+      });
     } finally {
       setLoading(false);
     }

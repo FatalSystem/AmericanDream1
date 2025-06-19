@@ -2,7 +2,7 @@ import axios from "axios";
 
 // Create an Axios instance
 const api = axios.create({
-  baseURL: "https://test-account.amdream.us/api",
+  baseURL: 'https://test-account.amdream.us/api',
   headers: {
     "Content-Type": "application/json",
     "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -27,7 +27,9 @@ api.interceptors.request.use(
       "Making request to:",
       config.url,
       "with method:",
-      config.method
+      config.method,
+      "with data:",
+      config.data
     );
     return config;
   },
@@ -41,7 +43,9 @@ api.interceptors.response.use(
       "Received response from:",
       response.config.url,
       "with status:",
-      response.status
+      response.status,
+      "with data:",
+      response.data
     );
     return response;
   },
@@ -56,21 +60,21 @@ api.interceptors.response.use(
       headers: error.config?.headers,
     });
 
-    // Ігноруємо 401 помилки
+    // Handle 401 errors (unauthorized)
     if (error.response?.status === 401) {
-      console.log("Ignoring 401 error for:", error.config.url);
-      return Promise.resolve({ data: [] }); // Повертаємо пустий масив замість помилки
-    }
-
-    // Don't retry if we already tried to retry
-    if (originalRequest._retry) {
-      return Promise.reject(error);
+      console.error("Authorization error:", error.config.url);
+      return Promise.reject(new Error("Please log in to continue"));
     }
 
     // Handle 404 errors
     if (error.response && error.response.status === 404) {
       console.error("API endpoint not found:", error.config.url);
-      return Promise.resolve({ data: [] }); // Повертаємо пустий масив замість помилки
+      return Promise.reject(new Error("Service not available"));
+    }
+
+    // Don't retry if we already tried to retry
+    if (originalRequest._retry) {
+      return Promise.reject(error);
     }
 
     if (

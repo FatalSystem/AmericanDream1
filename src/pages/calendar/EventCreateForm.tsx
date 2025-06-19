@@ -4,6 +4,9 @@ import React from "react";
 import "./EventCreateForm.css";
 import { TeacherWithColor } from "../../store/CalendarContext";
 import { DateTime } from "luxon";
+import { toast } from "react-toastify";
+
+console.log("=== EventCreateForm.tsx loaded ===");
 
 type LessonStatus =
   | "scheduled"
@@ -29,13 +32,36 @@ interface EventCreateFormProps {
 }
 
 const classTypes = [
-  { value: "trial", label: "Trial Lesson", duration: 30 },
-  { value: "regular", label: "Regular Lesson", duration: 50 },
-  { value: "instant", label: "Instant Lesson", duration: 50 },
-  { value: "unavailable", label: "Unavailable", duration: 0 },
-  { value: "group", label: "Group Lesson", duration: 50 },
-  { value: "training", label: "Training", duration: 50, adminOnly: true },
+  { value: "Trial-Lesson", label: "Trial Lesson", duration: 30 },
+  { value: "Regular-Lesson", label: "Regular Lesson", duration: 50 },
+  { value: "Training-Lesson", label: "Training Lesson", duration: 50 },
+  {
+    value: "Unavailable-Lesson",
+    label: "Unavailable Lesson",
+    duration: 50,
+    noStudent: true,
+  },
+  { value: "Group-Lesson", label: "Group Lesson", duration: 50 },
+  { value: "Makeup-Lesson", label: "Makeup Lesson", duration: 50 },
+  { value: "Intensive-Lesson", label: "Intensive Lesson", duration: 80 },
+  { value: "Workshop-Lesson", label: "Workshop", duration: 80, isGroup: true },
+  {
+    value: "Speaking-Club",
+    label: "Speaking Club",
+    duration: 50,
+    isGroup: true,
+  },
+  { value: "Holiday", label: "Holiday", duration: 480, noStudent: true }, // 8 hours
+  { value: "Sick-Leave", label: "Sick Leave", duration: 480, noStudent: true }, // 8 hours
+  {
+    value: "Technical-Break",
+    label: "Technical Break",
+    duration: 30,
+    noStudent: true,
+  },
 ];
+
+console.log("Available class types:", classTypes);
 
 const durations = [30, 50, 80];
 
@@ -66,19 +92,176 @@ function formatDateTimeEU(dt: string) {
   }
 }
 
-function getUserRole() {
-  if (typeof window !== "undefined") {
-    return localStorage.getItem("user-role") || "teacher";
-  }
-  return "teacher";
-}
-
 // Додаю визначення timezone користувача
 const getDefaultTimezone = () => {
   if (typeof window !== "undefined" && Intl && Intl.DateTimeFormat) {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Kyiv";
   }
   return "Europe/Kyiv";
+};
+
+// Add function to format time for display
+const formatTime = (date: string, timezone: string): string => {
+  return DateTime.fromISO(date, { zone: timezone }).toFormat("HH:mm");
+};
+
+// Add function to check if events overlap with buffer time
+const doEventsOverlap = (
+  start1: string,
+  end1: string,
+  start2: string,
+  end2: string,
+  timezone: string
+) => {
+  const BUFFER_MINUTES = 5; // Buffer time between lessons
+
+  const s1 = DateTime.fromISO(start1, { zone: timezone });
+  const e1 = DateTime.fromISO(end1, { zone: timezone });
+  const s2 = DateTime.fromISO(start2, { zone: timezone });
+  const e2 = DateTime.fromISO(end2, { zone: timezone });
+
+  // Add buffer to event times
+  const e1WithBuffer = e1.plus({ minutes: BUFFER_MINUTES });
+  const s1WithBuffer = s1.minus({ minutes: BUFFER_MINUTES });
+  const e2WithBuffer = e2.plus({ minutes: BUFFER_MINUTES });
+  const s2WithBuffer = s2.minus({ minutes: BUFFER_MINUTES });
+
+  // Check if events are on the same day
+  const isSameDay = s1.hasSame(s2, "day");
+
+  // If not same day, no overlap
+  if (!isSameDay) return false;
+
+  // Check time overlap including buffer
+  return s1WithBuffer < e2WithBuffer && e1WithBuffer > s2WithBuffer;
+};
+
+// Add function to check if new event overlaps with existing events
+const checkEventOverlap = async (
+  teacherId: string | number,
+  startDate: string,
+  endDate: string,
+  timezone: string
+): Promise<{ hasOverlap: boolean; existingEvent?: any }> => {
+  try {
+    console.log("Checking overlap for:", {
+      teacherId,
+      startDate,
+      endDate,
+      timezone,
+    });
+
+    const response = await calendarApi.getAllEvents();
+    if (!response?.events?.rows) {
+      throw new Error("Failed to get events");
+    }
+
+    console.log("All events:", response.events.rows);
+
+    // Filter events for the same teacher that are not cancelled
+    const teacherEvents = response.events.rows.filter((event: any) => {
+      // Ensure we're comparing strings
+      const teacherIdStr = String(teacherId);
+      const eventTeacherId = String(event.teacher_id);
+      const eventResourceId = String(event.resourceId);
+
+      const isTeacherMatch =
+        eventTeacherId === teacherIdStr || eventResourceId === teacherIdStr;
+      const isNotCancelled = !["cancelled", "completed"].includes(
+        event.class_status
+      );
+      const hasValidDates = Boolean(event.startDate && event.endDate);
+      const isFutureEvent = DateTime.fromISO(event.startDate) >= DateTime.now();
+
+      console.log("Event check:", {
+        event,
+        isTeacherMatch,
+        isNotCancelled,
+        hasValidDates,
+        isFutureEvent,
+        eventTeacherId,
+        eventResourceId,
+        teacherIdStr,
+      });
+
+      return isTeacherMatch && isNotCancelled && hasValidDates && isFutureEvent;
+    });
+
+    console.log("Filtered teacher events:", teacherEvents);
+
+    // Check overlap with each existing event
+    for (const event of teacherEvents) {
+      console.log("Checking event for overlap:", {
+        event,
+        newStart: startDate,
+        newEnd: endDate,
+        existingStart: event.startDate,
+        existingEnd: event.endDate,
+      });
+
+      const overlap = doEventsOverlap(
+        startDate,
+        endDate,
+        event.startDate,
+        event.endDate,
+        timezone
+      );
+
+      console.log("Overlap result:", overlap);
+
+      if (overlap) {
+        // Format the event type for display
+        const eventType = event.class_type?.replace(/-/g, " ") || "Unknown";
+        const eventTime = `${formatTime(
+          event.startDate,
+          timezone
+        )} - ${formatTime(event.endDate, timezone)}`;
+
+        console.log("Found overlapping event:", {
+          event,
+          eventType,
+          eventTime,
+        });
+
+        return {
+          hasOverlap: true,
+          existingEvent: {
+            ...event,
+            class_type: eventType,
+            formattedTime: eventTime,
+          },
+        };
+      }
+    }
+
+    return { hasOverlap: false };
+  } catch (error) {
+    console.error("Error checking event overlap:", error);
+    throw error;
+  }
+};
+
+// Show all class types without filtering
+const availableClassTypes = classTypes;
+
+console.log("Rendering EventCreateForm");
+
+// Helper function to validate class type
+const isValidClassType = (type: string): boolean => {
+  const isValid = classTypes.some((ct) => ct.value === type);
+  console.log("Validating class type:", {
+    type,
+    isValid,
+    availableTypes: classTypes.map((ct) => ct.value),
+  });
+  return isValid;
+};
+
+// Helper function to get class type details
+const getClassTypeDetails = (type: string) => {
+  const details = classTypes.find((ct) => ct.value === type);
+  console.log("Getting class type details:", { type, details });
+  return details;
 };
 
 export default function EventCreateForm({
@@ -88,11 +271,9 @@ export default function EventCreateForm({
   timezone = getDefaultTimezone(),
   start: defaultStart = null,
   end: defaultEnd = null,
-}: EventCreateFormProps & {
-  timezone?: string;
-  start?: Date | null;
-  end?: Date | null;
-}) {
+}: EventCreateFormProps) {
+  console.log("Initial render with class types:", classTypes);
+
   const [teacherId, setTeacherId] = useState(teachers[0]?.id || "");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [start, setStart] = useState(
@@ -107,8 +288,15 @@ export default function EventCreateForm({
   const [classStatus, setClassStatus] = useState<LessonStatus>("scheduled");
   const [classStatusDropdownOpen, setClassStatusDropdownOpen] = useState(false);
 
-  const [classType, setClassType] = useState("regular");
-  const [classTypeDropdownOpen, setClassTypeDropdownOpen] = useState(false);
+  const [classType, setClassType] = useState(() => {
+    const defaultType = "Regular-Lesson";
+    console.log("Initializing class type:", {
+      defaultType,
+      isValid: isValidClassType(defaultType),
+      availableTypes: classTypes.map((t) => t.value),
+    });
+    return defaultType;
+  });
   const [duration, setDuration] = useState(50);
   const [durationDropdownOpen, setDurationDropdownOpen] = useState(false);
   const [studentId, setStudentId] = useState("");
@@ -122,18 +310,10 @@ export default function EventCreateForm({
   const [repeatWeeks, setRepeatWeeks] = useState(2);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const classTypeDropdownRef = useRef<HTMLDivElement>(null);
   const durationDropdownRef = useRef<HTMLDivElement>(null);
   const groupDropdownRef = useRef<HTMLDivElement>(null);
   const classStatusDropdownRef = useRef<HTMLDivElement>(null);
   const repeatModeDropdownRef = useRef<HTMLDivElement>(null);
-
-  const userRole = getUserRole();
-
-  const availableClassTypes = classTypes.filter(
-    (type) =>
-      !type.adminOnly || userRole === "accountant" || userRole === "super_admin"
-  );
 
   const [students, setStudents] = useState<Student[]>([]);
   const [studentSearch, setStudentSearch] = useState("");
@@ -143,23 +323,19 @@ export default function EventCreateForm({
     defaultEnd ? defaultEnd.toISOString().slice(0, 16) : ""
   );
 
-  // Always recalculate lessonStatusOptions based on current userRole
+  // Show all lesson status options
   const lessonStatusOptions: { value: LessonStatus; label: string }[] = [
     { value: "scheduled", label: "Scheduled" },
     { value: "completed", label: "Given" },
     { value: "cancelled", label: "Cancelled" },
     { value: "student_no_show", label: "Student No Show" },
-    ...(["manager", "accountant", "administrator", "super_admin"].includes(
-      userRole
-    )
-      ? [
-          {
-            value: "teacher_no_show" as LessonStatus,
-            label: "Teacher not show",
-          },
-        ]
-      : []),
+    { value: "teacher_no_show", label: "Teacher not show" },
   ];
+
+  // Add state for showing/hiding student selection
+  const shouldShowStudentSelection = !classTypes.find(
+    (type) => type.value === classType
+  )?.noStudent;
 
   useEffect(() => {
     async function fetchStudents() {
@@ -226,13 +402,6 @@ export default function EventCreateForm({
         setDropdownOpen(false);
       }
       if (
-        classTypeDropdownOpen &&
-        classTypeDropdownRef.current &&
-        !classTypeDropdownRef.current.contains(event.target as Node)
-      ) {
-        setClassTypeDropdownOpen(false);
-      }
-      if (
         durationDropdownOpen &&
         durationDropdownRef.current &&
         !durationDropdownRef.current.contains(event.target as Node)
@@ -280,113 +449,226 @@ export default function EventCreateForm({
     };
   }, [
     dropdownOpen,
-    classTypeDropdownOpen,
     durationDropdownOpen,
     groupDropdownOpen,
     classStatusDropdownOpen,
     repeatMode,
   ]);
 
+  useEffect(() => {
+    console.log("Available class types:", availableClassTypes);
+    console.log("Class type select state:", { classType, classTypes });
+  }, [classType, availableClassTypes]);
+
   const handleSubmit = async (event?: React.FormEvent) => {
     if (event) event.preventDefault();
     setLoading(true);
     setError(null);
 
-    // Validate required fields
-    if (!teacherId) {
-      setError("Please select a teacher");
-      setLoading(false);
-      return;
-    }
+    try {
+      // Validate required fields
+      console.log("Validating form data:", {
+        teacherId,
+        start,
+        end,
+        selectedTeacher: teachers.find(
+          (t) => String(t.id) === String(teacherId)
+        ),
+      });
 
-    if (!start || !end) {
-      setError("Please select start and end time");
-      setLoading(false);
-      return;
-    }
-
-    // If unavailable, skip student/group/payment logic
-    if (classType === "unavailable") {
-      try {
-        const tz = timezone || getDefaultTimezone();
-        const startUTC =
-          DateTime.fromISO(start, { zone: tz }).toUTC().toISO() || "";
-        const endUTC =
-          DateTime.fromISO(end, { zone: tz }).toUTC().toISO() || "";
-        const eventData = {
-          class_type: classType,
-          student_id: 0,
-          teacher_id: parseInt(String(teacherId)),
-          class_status: "scheduled",
-          payment_status: "reserved",
-          start_date: startUTC,
-          end_date: endUTC,
-          duration: Number(duration),
-          isUnavailable: true,
-        };
-        await calendarApi.createCalendar(eventData);
-        onClose();
-        if (onSuccess) {
-          onSuccess(eventData);
-        }
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to create unavailable block"
-        );
-      } finally {
+      if (!teacherId) {
         setLoading(false);
-      }
-      return;
-    }
-
-    // Fetch student class balance before creating event
-    let paymentStatusToUse = "reserved";
-    if (classType !== "group" && studentId) {
-      try {
-        const balanceRes = await calendarApi.getStudentRemainingClasses(
-          studentId.toString()
-        );
-        const paidCount = balanceRes?.remaining || 0;
-        const isTrial = classType === "trial";
-        // Only check for regular lessons
-        if (!isTrial) {
-          if (paidCount > 0) {
-            paymentStatusToUse = "paid";
-          } else {
-            // Check if lesson is less than 12 hours from now
-            const startDateTime = DateTime.fromISO(start, { zone: timezone });
-            const now = DateTime.now().setZone(timezone);
-            const diffHours = startDateTime.diff(now, "hours").hours;
-            if (diffHours < 12) {
-              setError(
-                "Cannot add a lesson for this student less than 12 hours ahead without paid classes."
-              );
-              setLoading(false);
-              return;
-            }
-            paymentStatusToUse = "reserved";
-          }
-        }
-      } catch {
-        setError("Failed to check student class balance");
-        setLoading(false);
+        toast.error("Please select a teacher");
         return;
       }
-    }
 
-    try {
-      // Convert start and end to UTC using selected timezone
+      if (!start || !end) {
+        setLoading(false);
+        toast.error("Please select start and end time");
+        return;
+      }
+
+      // Convert start and end to UTC for overlap check
       const startUTC =
         DateTime.fromISO(start, { zone: timezone }).toUTC().toISO() || "";
       const endUTC =
         DateTime.fromISO(end, { zone: timezone }).toUTC().toISO() || "";
 
+      if (!startUTC || !endUTC) {
+        setLoading(false);
+        toast.error("Invalid date format");
+        return;
+      }
+
+      // Get all existing events
+      const existingEvents = await calendarApi.getAllEvents();
+      console.log("All events from server:", existingEvents);
+
+      if (!existingEvents?.events?.rows) {
+        throw new Error("Failed to get events");
+      }
+
+      // Check for overlaps
+      const teacherEvents = existingEvents.events.rows.filter((event: any) => {
+        const isTeacherMatch =
+          String(event.resourceId) === String(teacherId) ||
+          String(event.teacher_id) === String(teacherId);
+
+        console.log("Checking event:", {
+          event,
+          teacherId,
+          eventTeacherId: event.teacher_id,
+          eventResourceId: event.resourceId,
+          isTeacherMatch,
+          status: event.class_status,
+          startDate: event.startDate,
+          endDate: event.endDate,
+        });
+
+        return (
+          isTeacherMatch &&
+          event.class_status !== "cancelled" &&
+          event.startDate &&
+          event.endDate
+        );
+      });
+
+      console.log("Filtered teacher events:", teacherEvents);
+
+      // Check each event for overlap with 5 minute buffer
+      for (const event of teacherEvents) {
+        const start1 = new Date(startUTC);
+        const end1 = new Date(endUTC);
+        const start2 = new Date(event.startDate);
+        const end2 = new Date(event.endDate);
+
+        console.log("Comparing times:", {
+          newEventStart: start1.toISOString(),
+          newEventEnd: end1.toISOString(),
+          existingEventStart: start2.toISOString(),
+          existingEventEnd: end2.toISOString(),
+        });
+
+        // Simple overlap check without buffer first
+        const hasDirectOverlap = start1 < end2 && end1 > start2;
+
+        // If there's a direct overlap, block immediately
+        if (hasDirectOverlap) {
+          console.log("Direct overlap detected!");
+          setLoading(false);
+          toast.error(
+            `This time slot is already booked. There is a lesson from ${start2.toLocaleTimeString()} to ${end2.toLocaleTimeString()}. Please choose a different time.`
+          );
+          return;
+        }
+
+        // Check buffer zones (5 minutes before and after)
+        const BUFFER_MINUTES = 5;
+        const start1WithBuffer = new Date(
+          start1.getTime() - BUFFER_MINUTES * 60000
+        );
+        const end1WithBuffer = new Date(
+          end1.getTime() + BUFFER_MINUTES * 60000
+        );
+        const start2WithBuffer = new Date(
+          start2.getTime() - BUFFER_MINUTES * 60000
+        );
+        const end2WithBuffer = new Date(
+          end2.getTime() + BUFFER_MINUTES * 60000
+        );
+
+        const hasBufferOverlap =
+          start1WithBuffer < end2WithBuffer &&
+          end1WithBuffer > start2WithBuffer;
+
+        console.log("Overlap check result:", {
+          directOverlap: hasDirectOverlap,
+          bufferOverlap: hasBufferOverlap,
+        });
+
+        if (hasBufferOverlap) {
+          console.log("Buffer overlap detected!");
+          setLoading(false);
+          toast.error(
+            `Cannot create lesson - need at least 5 minutes between lessons. There is a lesson from ${start2.toLocaleTimeString()} to ${end2.toLocaleTimeString()}.`
+          );
+          return;
+        }
+      }
+
+      // If we get here, no overlaps were found
+      // Now proceed with creating the event based on type
+
+      console.log(
+        "Current class type:",
+        classType,
+        "Available types:",
+        classTypes
+      );
+
+      // Validate class type
+      if (!isValidClassType(classType)) {
+        setLoading(false);
+        toast.error(`Invalid class type: ${classType}`);
+        return;
+      }
+
+      const classTypeDetails = getClassTypeDetails(classType);
+      console.log("Class type details:", classTypeDetails);
+
+      // If unavailable, skip student/group/payment logic
+      if (classTypeDetails?.value === "Unavailable-Lesson") {
+        const eventData = {
+          class_type: classType,
+          student_id: 0,
+          teacher_id: parseInt(String(teacherId)),
+          class_status: "scheduled" as LessonStatus,
+          payment_status: "reserved" as PaymentStatus,
+          start_date: startUTC,
+          end_date: endUTC,
+          duration: Number(duration),
+          isUnavailable: true,
+        };
+
+        await calendarApi.createCalendar(eventData);
+        toast.success("Event created successfully");
+        onClose();
+        if (onSuccess) onSuccess(eventData);
+        return;
+      }
+
+      // For regular lessons, check student balance
+      let paymentStatusToUse = "reserved";
+      if (classTypeDetails?.value !== "Group-Lesson" && studentId) {
+        const balanceRes = await calendarApi.getStudentRemainingClasses(
+          studentId.toString()
+        );
+        const paidCount = balanceRes?.remaining || 0;
+        const isTrial = classTypeDetails?.value === "Trial-Lesson";
+
+        if (!isTrial) {
+          if (paidCount > 0) {
+            paymentStatusToUse = "paid";
+          } else {
+            const startDateTime = DateTime.fromISO(start, { zone: timezone });
+            const now = DateTime.now().setZone(timezone);
+            const diffHours = startDateTime.diff(now, "hours").hours;
+            if (diffHours < 12) {
+              setLoading(false);
+              toast.error(
+                "Cannot add a lesson for this student less than 12 hours ahead without paid classes."
+              );
+              return;
+            }
+            paymentStatusToUse = "reserved";
+          }
+        }
+      }
+
       const eventData = {
-        class_type: classType,
+        class_type: classTypeDetails.value, // Use validated class type
         student_id:
-          classType === "group"
+          classTypeDetails.value === "Group-Lesson"
             ? parseInt(selectedGroupId)
             : parseInt(studentId),
         teacher_id: parseInt(String(teacherId)),
@@ -397,15 +679,20 @@ export default function EventCreateForm({
         duration: Number(duration),
       };
 
+      console.log("Creating event with data:", eventData);
+
       await calendarApi.createCalendar(eventData);
+      toast.success("Event created successfully");
       onClose();
       if (onSuccess) {
         onSuccess(eventData);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create event");
-    } finally {
+      console.error("Error creating event:", err);
       setLoading(false);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to create event"
+      );
     }
   };
 
@@ -509,50 +796,49 @@ export default function EventCreateForm({
       <div className="flex gap-4">
         <div className="flex-1">
           <label className="label">Class Type</label>
-          <div className="dropdown" ref={classTypeDropdownRef}>
-            <button
-              type="button"
-              className="dropdown-button"
-              onClick={() => setClassTypeDropdownOpen((v) => !v)}
-              style={{ color: "#222" }}
+          <div style={{ position: "relative", width: "100%" }}>
+            <select
+              value={classType}
+              onChange={(e) => {
+                const selectedValue = e.target.value;
+                console.log("Class type change:", {
+                  selectedValue,
+                  availableTypes: classTypes.map((t) => t.value),
+                  matchingType: classTypes.find(
+                    (t) => t.value === selectedValue
+                  ),
+                });
+
+                setClassType(selectedValue);
+                const selectedType = classTypes.find(
+                  (t) => t.value === selectedValue
+                );
+
+                if (selectedType) {
+                  console.log("Setting duration for type:", selectedType);
+                  setDuration(selectedType.duration);
+                } else {
+                  console.warn(
+                    "No matching class type found for:",
+                    selectedValue
+                  );
+                }
+              }}
+              style={{
+                width: "100%",
+                padding: "8px 12px",
+                border: "1px solid #ccc",
+                borderRadius: "4px",
+                background: "white",
+                cursor: "pointer",
+              }}
             >
-              <span>{selectedClassType?.label || "Select type"}</span>
-              <svg
-                className={`ml-2 size-4 transition-transform ${
-                  classTypeDropdownOpen ? "rotate-180" : ""
-                }`}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M19 9l-7 7-7-7"
-                />
-              </svg>
-            </button>
-            {classTypeDropdownOpen && (
-              <div className="dropdown-menu">
-                {availableClassTypes.map((type) => (
-                  <button
-                    type="button"
-                    key={type.value}
-                    className={`dropdown-item ${
-                      type.value === classType ? "selected" : ""
-                    }`}
-                    onClick={() => {
-                      setClassType(type.value);
-                      setClassTypeDropdownOpen(false);
-                    }}
-                    style={{ color: "#222" }}
-                  >
-                    <div>{type.label}</div>
-                  </button>
-                ))}
-              </div>
-            )}
+              {classTypes.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
         {/* Hide class status if unavailable */}
@@ -673,22 +959,12 @@ export default function EventCreateForm({
         </div>
       ) : null}
 
-      {/* Start Time and Student/Group - Side by side */}
-      <div className="flex gap-4">
+      {/* Show student selection only if not unavailable */}
+      {shouldShowStudentSelection && (
         <div className="flex-1">
-          <label className="label">Start Time</label>
-          <input
-            className="input"
-            type="datetime-local"
-            value={start}
-            onChange={(e) => setStart(e.target.value)}
-            required
-          />
-          <div style={{ color: "#2563eb", fontSize: 13, marginTop: 4 }}>
-            {formatDateTimeEU(start)}
-          </div>
-        </div>
-        <div className="flex-1">
+          <label className="label">
+            {classType === "group" ? "Group" : "Student"}
+          </label>
           {classType === "group" ? (
             <>
               <label className="label">Select Group</label>
@@ -807,24 +1083,40 @@ export default function EventCreateForm({
             </>
           )}
         </div>
-      </div>
+      )}
 
-      {/* End Time */}
+      {/* Date and Time Selection */}
       <div className="flex gap-4">
+        <div className="flex-1">
+          <label className="label">Start Time</label>
+          <input
+            type="datetime-local"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+            className="input"
+            required
+          />
+        </div>
         <div className="flex-1">
           <label className="label">End Time</label>
           <input
-            className="input"
             type="datetime-local"
-            value={endInput}
-            onChange={(e) => setEndInput(e.target.value)}
+            value={end}
+            onChange={(e) => setEnd(e.target.value)}
+            className="input"
             required
-            disabled
           />
-          <div style={{ color: "#2563eb", fontSize: 13, marginTop: 4 }}>
-            {formatDateTimeEU(endInput)}
-          </div>
         </div>
+      </div>
+
+      {/* Submit Button */}
+      <div className="flex justify-end gap-4 mt-6">
+        <button type="button" onClick={onClose} className="btn btn-secondary">
+          Cancel
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={loading}>
+          {loading ? "Creating..." : "Create Event"}
+        </button>
       </div>
     </form>
   );
