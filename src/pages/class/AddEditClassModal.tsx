@@ -53,14 +53,11 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
 
   useEffect(() => {
     if (visible && editData) {
-      // Розділяємо дату та час для редагування (використовуємо локальний час)
-      const dateTime = dayjs(
-        `${editData.date} ${editData.time}`,
-        "YYYY-MM-DD HH:mm"
-      );
+      // Розділяємо дату та час для редагування
+      const dateTime = dayjs(editData.date + " " + editData.time);
       setFormData({
-        date: editData.date, // Використовуємо оригінальну дату
-        time: editData.time, // Використовуємо оригінальний час
+        date: dateTime.format("YYYY-MM-DD"),
+        time: editData.time,
         studentId: editData.studentId,
         teacherId: editData.teacherId,
         status: editData.status,
@@ -75,9 +72,8 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
         type: editData.type,
       });
       console.log("Setting form values for edit:", {
-        originalDate: editData.date,
-        originalTime: editData.time,
-        parsedDateTime: dateTime.format("YYYY-MM-DD HH:mm:ss"),
+        date: dateTime,
+        time: editData.time,
         studentId: editData.studentId,
         teacherId: editData.teacherId,
         status: editData.status,
@@ -119,13 +115,10 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
       const teacherExists = teachers.find((t) => t.id === editData.teacherId);
 
       if (studentExists && teacherExists) {
-        const dateTime = dayjs(
-          `${editData.date} ${editData.time}`,
-          "YYYY-MM-DD HH:mm"
-        );
+        const dateTime = dayjs(editData.date + " " + editData.time);
         setFormData({
-          date: editData.date, // Використовуємо оригінальну дату
-          time: editData.time, // Використовуємо оригінальний час
+          date: dateTime.format("YYYY-MM-DD"),
+          time: editData.time,
           studentId: editData.studentId,
           teacherId: editData.teacherId,
           status: editData.status,
@@ -154,20 +147,11 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
       const dateTime = dayjs(values.date);
       const timeString = values.time || "00:00";
 
-      // Формуємо дату та час для календаря (використовуємо локальний час)
+      // Формуємо дату та час для календаря
       const startDateTime = dayjs(
-        `${dateTime.format("YYYY-MM-DD")} ${timeString}`,
-        "YYYY-MM-DD HH:mm"
+        `${dateTime.format("YYYY-MM-DD")} ${timeString}`
       );
       const endDateTime = startDateTime.add(1, "hour"); // Клас триває 1 годину
-
-      console.log("Original date:", dateTime.format("YYYY-MM-DD"));
-      console.log("Original time:", timeString);
-      console.log(
-        "Start datetime:",
-        startDateTime.format("YYYY-MM-DD HH:mm:ss")
-      );
-      console.log("End datetime:", endDateTime.format("YYYY-MM-DD HH:mm:ss"));
 
       if (isEditMode && editData) {
         // Оновлення існуючого класу через календар API
@@ -246,8 +230,6 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
 
         const createResponse = await calendarApi.createCalendar(eventData);
         console.log("Create response:", createResponse);
-        console.log("Create response type:", typeof createResponse);
-        console.log("Create response keys:", Object.keys(createResponse || {}));
         message.success("Class created successfully!");
 
         // Створюємо об'єкт для додавання до локального стану
@@ -270,8 +252,6 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
           type: values.type,
           fullDateTime: startDateTime.toDate(),
         };
-
-        console.log("New class data to be saved:", newClassData);
 
         // Зберігаємо новий клас в localStorage
         const existingClasses = JSON.parse(
@@ -327,6 +307,15 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
       footer={[
         <Button key="cancel" onClick={handleCancel}>
           Cancel
+        </Button>,
+        <Button
+          key="refresh"
+          onClick={() => {
+            localStorage.removeItem("classes");
+            window.location.reload();
+          }}
+        >
+          Refresh Data
         </Button>,
         <Button
           key="submit"

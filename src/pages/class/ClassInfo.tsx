@@ -8,6 +8,7 @@ import LoadingSpinner from "../../components/LoadingSpinner";
 import { useAuth } from "../../hooks/useAuth";
 import moment from "moment";
 import { motion } from "framer-motion";
+import AddEditClassModal from "./AddEditClassModal";
 import { Button as AntButton } from "antd";
 import { EditOutlined } from "@ant-design/icons";
 import { useClassModal } from "../../contexts/ClassModalContext";
@@ -296,6 +297,15 @@ const ClassInfo: React.FC<{ studentId: string; studentName: string }> = ({
           className="custom-table"
         />
       </Card>
+
+      <AddEditClassModal
+        visible={false}
+        onCancel={() => {}}
+        onSuccess={() => {}}
+        editData={null}
+        teachers={[]}
+        students={[]}
+      />
     </motion.div>
   );
 };

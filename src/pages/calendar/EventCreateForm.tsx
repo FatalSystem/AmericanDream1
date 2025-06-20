@@ -461,6 +461,70 @@ export default function EventCreateForm({
           return;
         }
 
+        // Check if this is a reserved lesson being marked as "Given"
+        const isBeingMarkedAsGiven = classStatus === "completed";
+        const hasStudent = editEventData?.studentId;
+
+        console.log(
+          "🔍 EventCreateForm - Checking lesson status change conditions:",
+          {
+            isBeingMarkedAsGiven,
+            hasStudent,
+            studentId: editEventData?.studentId,
+            classStatus,
+          }
+        );
+
+        // If this is being marked as "Given" and has a student, check if student has paid lessons
+        if (isBeingMarkedAsGiven && hasStudent) {
+          try {
+            console.log(
+              "🔍 EventCreateForm - Checking student's remaining classes before setting 'Given' status..."
+            );
+            const token =
+              typeof window !== "undefined"
+                ? localStorage.getItem("token")
+                : null;
+            const studentResponse = await fetch(
+              `/api/proxy/students/${hasStudent}/remaining-classes`,
+              {
+                credentials: "include",
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+              }
+            );
+
+            if (!studentResponse.ok) {
+              throw new Error("Failed to fetch student class balance");
+            }
+
+            const studentData = await studentResponse.json();
+            const remainingClasses = studentData.remaining || 0;
+
+            console.log("🔍 EventCreateForm - Student remaining classes:", {
+              studentId: hasStudent,
+              remainingClasses,
+              canSetGiven: remainingClasses > 0,
+            });
+
+            // If student has no paid classes, prevent setting status to "Given"
+            if (remainingClasses <= 0) {
+              console.log(
+                "❌ EventCreateForm - Cannot set status to 'Given' - student has no paid classes"
+              );
+              toast.error(
+                "Cannot mark lesson as 'Given' - student has no paid classes"
+              );
+              setLoading(false);
+              return; // Exit early - prevent status change
+            }
+          } catch (error) {
+            console.error("Error checking student's remaining classes:", error);
+            toast.error("Failed to verify student's class balance");
+            setLoading(false);
+            return; // Exit early if we can't verify student's balance
+          }
+        }
+
         const eventData = {
           id: parseInt(initialEventId || ""),
           start_date: startUTC,
@@ -738,6 +802,14 @@ export default function EventCreateForm({
         // інакше, створюємо нову подію (для режиму створення)
         await calendarApi.createCalendar(eventData);
         toast.success("Event created successfully");
+
+        // Notify other components that events have been updated
+        localStorage.setItem("calendarEventsUpdated", Date.now().toString());
+        console.log(
+          "📢 Calendar events updated notification sent from EventCreateForm at:",
+          new Date().toISOString()
+        );
+
         onClose();
       }
     } catch (err) {

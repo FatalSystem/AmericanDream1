@@ -645,14 +645,21 @@ const Calendar: React.FC = () => {
       );
       console.log("🕐 User timezone:", timezone);
 
-      // Get all reserved events
-      const reservedEvents = events.filter(
-        (event) =>
-          (event.extendedProps as EventExtendedProps)?.payment_status ===
-          "reserved"
-      );
+      // Get all reserved events that are still scheduled (not "Given")
+      const reservedEvents = events.filter((event) => {
+        const paymentStatus = (event.extendedProps as EventExtendedProps)
+          ?.payment_status;
+        const classStatus = (event.extendedProps as EventExtendedProps)
+          ?.class_status;
 
-      console.log("📋 Found reserved events:", reservedEvents.length);
+        return (
+          paymentStatus === "reserved" &&
+          classStatus !== "Given" &&
+          classStatus !== "given"
+        );
+      });
+
+      console.log("📋 Found reserved scheduled events:", reservedEvents.length);
 
       // Find events that need to be deleted (less than 12 hours until start)
       const eventsToDelete = reservedEvents.filter((event) => {
@@ -660,6 +667,8 @@ const Calendar: React.FC = () => {
         const startTime = dayjs(event.start);
         const currentTimeInUserTz = dayjs().tz(timezone);
         const hoursUntilStart = startTime.diff(currentTimeInUserTz, "hour");
+        const classStatus = (event.extendedProps as EventExtendedProps)
+          ?.class_status;
 
         console.log("🔍 Checking event:", {
           id: event.id,
@@ -669,9 +678,11 @@ const Calendar: React.FC = () => {
             "YYYY-MM-DD HH:mm:ss"
           ),
           hoursUntilStart: hoursUntilStart,
+          classStatus: classStatus,
           willDelete: hoursUntilStart < 12,
         });
 
+        // Only delete if less than 12 hours until start (scheduled lessons only)
         return hoursUntilStart < 12;
       });
 
@@ -680,11 +691,13 @@ const Calendar: React.FC = () => {
       // If we have events to delete
       if (eventsToDelete.length > 0) {
         console.log(
-          "Found reserved classes to remove:",
+          "Found reserved scheduled classes to remove:",
           eventsToDelete.map((event) => ({
             id: event.id,
             title: event.title,
             start: dayjs(event.start).format("YYYY-MM-DD HH:mm:ss"),
+            status: (event.extendedProps as EventExtendedProps)?.class_status,
+            reason: "Less than 12 hours until start",
           }))
         );
 
@@ -692,6 +705,7 @@ const Calendar: React.FC = () => {
         for (const event of eventsToDelete) {
           try {
             await api.delete(`/calendar/events/${event.id}`);
+            console.log(`✅ Deleted event ${event.id}`);
           } catch (error) {
             console.error(`Failed to delete event ${event.id}:`, error);
           }
@@ -711,12 +725,17 @@ const Calendar: React.FC = () => {
       }
 
       // Log remaining reserved events
-      const remainingReserved = events.filter(
-        (event) =>
-          !eventsToDelete.some((e) => e.id === event.id) &&
-          (event.extendedProps as EventExtendedProps)?.payment_status ===
-            "reserved"
-      );
+      const remainingReserved = events.filter((event) => {
+        const paymentStatus = (event.extendedProps as EventExtendedProps)
+          ?.payment_status;
+        const classStatus = (event.extendedProps as EventExtendedProps)
+          ?.class_status;
+
+        return (
+          paymentStatus === "reserved" &&
+          !eventsToDelete.some((e) => e.id === event.id)
+        );
+      });
 
       if (remainingReserved.length > 0) {
         console.log(
@@ -725,6 +744,7 @@ const Calendar: React.FC = () => {
             id: event.id,
             title: event.title,
             start: dayjs(event.start).format("YYYY-MM-DD HH:mm:ss"),
+            status: (event.extendedProps as EventExtendedProps)?.class_status,
             hoursUntilStart: dayjs(event.start).diff(
               currentTimeInUserTz,
               "hour"
@@ -1035,6 +1055,10 @@ const Calendar: React.FC = () => {
 
       // Notify other components that events have been updated
       localStorage.setItem("calendarEventsUpdated", Date.now().toString());
+      console.log(
+        "📢 Calendar events updated notification sent at:",
+        new Date().toISOString()
+      );
     } catch (error: any) {
       console.error("Error creating event:", error);
       message.error(error.message || "Failed to create event");
@@ -1485,6 +1509,53 @@ const Calendar: React.FC = () => {
           requestBody: updateData,
         });
       } else {
+        // Check if trying to set status to "Given" for a student
+        const isBeingMarkedAsGiven =
+          statusValue === "Given" || statusValue === "given";
+        const hasStudent = eventDetails?.studentId;
+
+        console.log("🔍 Checking lesson status change conditions:", {
+          isBeingMarkedAsGiven,
+          hasStudent,
+          studentId: eventDetails?.studentId,
+          currentStatus: eventDetails?.class_status,
+          newStatus: statusValue,
+        });
+
+        // If trying to mark as "Given" and has a student, check if student has paid lessons
+        if (isBeingMarkedAsGiven && hasStudent) {
+          try {
+            console.log(
+              "🔍 Checking student's remaining classes before setting 'Given' status..."
+            );
+            const studentResponse = await api.get(
+              `/students/${hasStudent}/remaining-classes`
+            );
+            const remainingClasses = studentResponse.data.remainingClasses || 0;
+
+            console.log("🔍 Student remaining classes:", {
+              studentId: hasStudent,
+              remainingClasses,
+              canSetGiven: remainingClasses > 0,
+            });
+
+            // If student has no paid classes, prevent setting status to "Given"
+            if (remainingClasses <= 0) {
+              console.log(
+                "❌ Cannot set status to 'Given' - student has no paid classes"
+              );
+              message.error(
+                "Cannot mark lesson as 'Given' - student has no paid classes"
+              );
+              return; // Exit early - prevent status change
+            }
+          } catch (error) {
+            console.error("Error checking student's remaining classes:", error);
+            message.error("Failed to verify student's class balance");
+            return; // Exit early if we can't verify student's balance
+          }
+        }
+
         // Use PATCH /calendar/events/:id/status for updating only event status
         const response = await api.patch(`/calendar/events/${eventId}/status`, {
           class_status: statusValue,
@@ -1536,6 +1607,10 @@ const Calendar: React.FC = () => {
 
       // Notify other components that events have been updated
       localStorage.setItem("calendarEventsUpdated", Date.now().toString());
+      console.log(
+        "📢 Calendar events updated notification sent at:",
+        new Date().toISOString()
+      );
 
       console.log("✅ Event update completed successfully");
 
@@ -1585,6 +1660,10 @@ const Calendar: React.FC = () => {
 
         // Notify other components that events have been updated
         localStorage.setItem("calendarEventsUpdated", Date.now().toString());
+        console.log(
+          "📢 Calendar events updated notification sent at:",
+          new Date().toISOString()
+        );
       }
     } catch (error) {
       console.error("Error deleting event:", error);
@@ -1732,6 +1811,57 @@ const Calendar: React.FC = () => {
       console.log("🔄 Updating event with data:", updatedData);
       console.log("📋 EditEventData:", editEventData);
 
+      // Check if trying to set status to "Given" for a student
+      const isBeingMarkedAsGiven =
+        updatedData.class_status === "Given" ||
+        updatedData.class_status === "given";
+      const hasStudent = editEventData?.studentId;
+
+      console.log(
+        "🔍 handleUpdateEvent - Checking lesson status change conditions:",
+        {
+          isBeingMarkedAsGiven,
+          hasStudent,
+          studentId: editEventData?.studentId,
+          currentStatus: editEventData?.class_status,
+          newStatus: updatedData.class_status,
+        }
+      );
+
+      // If trying to mark as "Given" and has a student, check if student has paid lessons
+      if (isBeingMarkedAsGiven && hasStudent) {
+        try {
+          console.log(
+            "🔍 handleUpdateEvent - Checking student's remaining classes before setting 'Given' status..."
+          );
+          const studentResponse = await api.get(
+            `/students/${hasStudent}/remaining-classes`
+          );
+          const remainingClasses = studentResponse.data.remainingClasses || 0;
+
+          console.log("🔍 handleUpdateEvent - Student remaining classes:", {
+            studentId: hasStudent,
+            remainingClasses,
+            canSetGiven: remainingClasses > 0,
+          });
+
+          // If student has no paid classes, prevent setting status to "Given"
+          if (remainingClasses <= 0) {
+            console.log(
+              "❌ handleUpdateEvent - Cannot set status to 'Given' - student has no paid classes"
+            );
+            message.error(
+              "Cannot mark lesson as 'Given' - student has no paid classes"
+            );
+            return; // Exit early - prevent status change
+          }
+        } catch (error) {
+          console.error("Error checking student's remaining classes:", error);
+          message.error("Failed to verify student's class balance");
+          return; // Exit early if we can't verify student's balance
+        }
+      }
+
       // Get teacher information from editEventData
       const teacherId = editEventData?.teacherId;
       const teacher = teachers.find((t) => String(t.id) === String(teacherId));
@@ -1789,6 +1919,13 @@ const Calendar: React.FC = () => {
 
       // Оновлюємо відображення
       updateDisplayedEvents();
+
+      // Notify other components that events have been updated
+      localStorage.setItem("calendarEventsUpdated", Date.now().toString());
+      console.log(
+        "📢 Calendar events updated notification sent at:",
+        new Date().toISOString()
+      );
 
       message.success("Event updated successfully");
     } catch (error) {
@@ -2059,6 +2196,13 @@ const Calendar: React.FC = () => {
 
       // Refresh events
       await fetchEvents();
+
+      // Notify other components that events have been updated
+      localStorage.setItem("calendarEventsUpdated", Date.now().toString());
+      console.log(
+        "📢 Calendar events updated notification sent at:",
+        new Date().toISOString()
+      );
     } catch (error) {
       console.error("Error adding unavailable time:", error);
       message.error("Failed to add unavailable time");
@@ -2077,6 +2221,63 @@ const Calendar: React.FC = () => {
     });
 
     try {
+      // Check if trying to set status to "Given" through drag & drop
+      const isBeingMarkedAsGiven =
+        info.event.extendedProps?.class_status === "Given" ||
+        info.event.extendedProps?.class_status === "given";
+      const hasStudent = info.event.extendedProps?.studentId;
+
+      console.log(
+        "🔍 handleEventUpdate - Checking lesson status change conditions:",
+        {
+          isBeingMarkedAsGiven,
+          hasStudent,
+          studentId: info.event.extendedProps?.studentId,
+          currentStatus: info.oldEvent.extendedProps?.class_status,
+          newStatus: info.event.extendedProps?.class_status,
+        }
+      );
+
+      // If trying to mark as "Given" and has a student, check if student has paid lessons
+      if (isBeingMarkedAsGiven && hasStudent) {
+        try {
+          console.log(
+            "🔍 handleEventUpdate - Checking student's remaining classes before setting 'Given' status..."
+          );
+          const studentResponse = await api.get(
+            `/students/${hasStudent}/remaining-classes`
+          );
+          const remainingClasses = studentResponse.data.remainingClasses || 0;
+
+          console.log("🔍 handleEventUpdate - Student remaining classes:", {
+            studentId: hasStudent,
+            remainingClasses,
+            canSetGiven: remainingClasses > 0,
+          });
+
+          // If student has no paid classes, prevent setting status to "Given"
+          if (remainingClasses <= 0) {
+            console.log(
+              "❌ handleEventUpdate - Cannot set status to 'Given' - student has no paid classes"
+            );
+            message.error(
+              "Cannot mark lesson as 'Given' - student has no paid classes"
+            );
+
+            // Revert the drag & drop change
+            info.revert();
+            return; // Exit early - prevent status change
+          }
+        } catch (error) {
+          console.error("Error checking student's remaining classes:", error);
+          message.error("Failed to verify student's class balance");
+
+          // Revert the drag & drop change
+          info.revert();
+          return; // Exit early if we can't verify student's balance
+        }
+      }
+
       // Перевіряємо чи це unavailable event
       const isUnavailable = isUnavailableEvent(info.event);
       let updatedEvent: CustomEventInput;
@@ -2182,6 +2383,13 @@ const Calendar: React.FC = () => {
       setTimeout(() => {
         updateDisplayedEvents();
       }, 100);
+
+      // Notify other components that events have been updated
+      localStorage.setItem("calendarEventsUpdated", Date.now().toString());
+      console.log(
+        "📢 Calendar events updated notification sent at:",
+        new Date().toISOString()
+      );
 
       toast.success("Event successfully updated!");
     } catch (error) {
@@ -2519,21 +2727,11 @@ const Calendar: React.FC = () => {
                       selectedValueUTC: v.utc().format("YYYY-MM-DD HH:mm:ss"),
                     });
 
-                    setEventForm({
-                      teacherId: null,
-                      studentId: null,
+                    setEventForm((prev) => ({
+                      ...prev,
                       start: v.format("YYYY-MM-DD HH:mm:ss"),
                       end: end.format("YYYY-MM-DD HH:mm:ss"),
-                      classType: "Regular",
-                      status: "scheduled",
-                      duration: "50 min",
-                      payment_status: "unpaid",
-                      repeating: {
-                        type: "none",
-                        days: [],
-                        weeks: 1,
-                      },
-                    });
+                    }));
                   }
                 }}
                 style={{ width: "100%" }}

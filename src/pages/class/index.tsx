@@ -19,6 +19,7 @@ import "../../pages/home/dashboard.css";
 import { motion } from "framer-motion";
 import AddEditClassModal from "./AddEditClassModal";
 import { calendarApi } from "../../api/calendar";
+import { toast } from "react-toastify";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -153,22 +154,12 @@ export default function ClassesPage() {
   };
 
   const fetchClasses = useCallback(async () => {
+    console.log("🚀 fetchClasses called at:", new Date().toISOString());
     try {
       setLoading(true);
       console.log("Fetching classes...");
 
-      // Спочатку перевіряємо localStorage
-      const localClasses = localStorage.getItem("classes");
-      if (localClasses) {
-        const parsedClasses = JSON.parse(localClasses);
-        console.log("Found classes in localStorage:", parsedClasses);
-        setClasses(parsedClasses);
-        setError(null);
-        setLoading(false);
-        return;
-      }
-
-      // Якщо в localStorage немає даних, завантажуємо з сервера
+      // Завжди завантажуємо свіжі дані з сервера для кращої синхронізації
       const response = await api.get("/calendar/events");
       console.log("Raw API response data:", response.data);
 
@@ -191,6 +182,7 @@ export default function ClassesPage() {
       console.log(`Total events received from server: ${events.length}`);
       console.log("Current teachers state:", teachers);
       console.log("Current students state:", students);
+      console.log("🔄 Processing events for classes page...");
 
       const mapped = events
         .map((event: any) => {
@@ -210,9 +202,13 @@ export default function ClassesPage() {
             teacherId
           );
 
-          // Parse date from server (treat as local time)
-          const startDate = event.startDate ? dayjs(event.startDate) : null;
-          const endDate = event.endDate ? dayjs(event.endDate) : null;
+          // Convert UTC date to user timezone for display
+          const startDate = event.startDate
+            ? dayjs.utc(event.startDate).tz(timezone)
+            : null;
+          const endDate = event.endDate
+            ? dayjs.utc(event.endDate).tz(timezone)
+            : null;
 
           console.log(`Processing event ${event.id}:`, {
             originalStartDate: event.startDate,
@@ -241,11 +237,21 @@ export default function ClassesPage() {
             type: event.class_type || event.type || "regular",
             fullDateTime: startDate ? startDate.toDate() : new Date(), // For sorting - ensure proper date object
           };
-          console.log("Mapped event:", mappedEvent);
+
+          console.log("📅 Mapped event from calendar:", {
+            id: mappedEvent.id,
+            studentName: mappedEvent.studentName,
+            teacherName: mappedEvent.teacherName,
+            date: mappedEvent.date,
+            time: mappedEvent.time,
+            status: mappedEvent.status,
+            type: mappedEvent.type,
+          });
+
           return mappedEvent;
         })
         .filter((event: any) => {
-          // Exclude events with status "Unavailable" and "Scheduled"
+          // Покращена фільтрація - включаємо більше типів подій
           const status = event.status?.toLowerCase();
           const classType = event.type?.toLowerCase();
 
@@ -253,10 +259,12 @@ export default function ClassesPage() {
             `Filtering event ${event.id}: status="${status}" (original: "${event.status}"), type="${classType}"`
           );
 
+          // Включаємо всі події крім unavailable та scheduled
           const shouldInclude =
             status !== "unavailable" &&
             status !== "scheduled" &&
-            classType !== "unavailable";
+            classType !== "unavailable" &&
+            classType !== "unavailable-lesson";
 
           if (!shouldInclude) {
             console.log(
@@ -264,7 +272,7 @@ export default function ClassesPage() {
             );
           } else {
             console.log(
-              `✅ Including event ${event.id} with status "${status}"`
+              `✅ Including event ${event.id} with status "${status}" and type "${classType}"`
             );
           }
 
@@ -302,6 +310,7 @@ export default function ClassesPage() {
 
       console.log(`Events after filtering: ${mapped.length}`);
       console.log("Final mapped events:", mapped);
+      console.log("✅ Classes page synchronization completed");
 
       // Verify sorting is correct
       const isSortedCorrectly = mapped.every((event, index) => {
@@ -319,8 +328,9 @@ export default function ClassesPage() {
       setClasses(mapped);
       setError(null);
 
-      // Зберігаємо дані в localStorage
+      // Зберігаємо дані в localStorage для кешування
       localStorage.setItem("classes", JSON.stringify(mapped));
+      localStorage.setItem("classesLastUpdated", Date.now().toString());
       console.log("Saved classes to localStorage");
     } catch (err) {
       console.error("Error fetching classes:", err);
@@ -361,13 +371,31 @@ export default function ClassesPage() {
   useEffect(() => {
     const checkForUpdates = () => {
       const lastUpdate = localStorage.getItem("calendarEventsUpdated");
+      const classesLastUpdate = localStorage.getItem("classesLastUpdated");
+      console.log("🔍 Checking for calendar updates:", {
+        lastUpdate,
+        classesLastUpdate,
+        currentTime: Date.now(),
+      });
+
       if (lastUpdate) {
         const lastUpdateTime = parseInt(lastUpdate);
         const currentTime = Date.now();
+        const timeDiff = currentTime - lastUpdateTime;
 
-        // If the update was recent (within last 5 seconds), refresh data
-        if (currentTime - lastUpdateTime < 5000) {
-          console.log("Calendar events updated, refreshing classes data");
+        console.log("🔍 Update check:", {
+          lastUpdateTime,
+          currentTime,
+          timeDiff,
+          shouldUpdate: timeDiff < 30000, // Збільшуємо до 30 секунд
+        });
+
+        // If the update was recent (within last 30 seconds), refresh data
+        if (timeDiff < 30000) {
+          console.log("🔄 Calendar events updated, refreshing classes data");
+          // Clear localStorage to force fresh data from server
+          localStorage.removeItem("classes");
+          localStorage.removeItem("classesLastUpdated");
           fetchClasses();
           // Clear the update flag to avoid repeated refreshes
           localStorage.removeItem("calendarEventsUpdated");
@@ -375,8 +403,11 @@ export default function ClassesPage() {
       }
     };
 
-    // Check for updates every 2 seconds
+    // Check for updates every 2 seconds для кращої синхронізації
     const interval = setInterval(checkForUpdates, 2000);
+
+    // Also check immediately when component mounts
+    checkForUpdates();
 
     return () => clearInterval(interval);
   }, [fetchClasses]);
@@ -401,14 +432,18 @@ export default function ClassesPage() {
 
         // Clear localStorage to force refresh from server
         localStorage.removeItem("classes");
+        localStorage.removeItem("classesLastUpdated");
 
-        // Refresh the classes list
-        setTimeout(() => {
-          fetchClasses();
-        }, 1000);
+        // Refresh the classes list immediately
+        await fetchClasses();
 
         // Notify calendar component that events have been updated
         localStorage.setItem("calendarEventsUpdated", Date.now().toString());
+
+        // Also notify that classes have been updated
+        localStorage.setItem("lessonsUpdated", Date.now().toString());
+
+        toast.success("Class deleted successfully");
       }
     } catch (err) {
       console.error("Error deleting class:", err);
@@ -417,7 +452,7 @@ export default function ClassesPage() {
         navigate("/login");
         return;
       }
-      console.error("Failed to delete class");
+      toast.error("Failed to delete class");
     }
   };
 
@@ -511,54 +546,20 @@ export default function ClassesPage() {
       width: "20%",
       render: (text: string) => text,
       sorter: (a, b) => a.studentName.localeCompare(b.studentName),
-      filterDropdown: ({
-        setSelectedKeys,
-        selectedKeys,
-        confirm,
-        clearFilters,
-      }) => (
-        <div className="custom-filter-dropdown">
-          <div className="filter-list">
-            {students
-              .sort((a, b) => a.name.localeCompare(b.name))
-              .map((student) => (
-                <Checkbox
-                  key={student.id}
-                  checked={(selectedKeys as string[]).includes(student.name)}
-                  onChange={(e) => {
-                    const newSelectedKeys = e.target.checked
-                      ? [...selectedKeys, student.name]
-                      : (selectedKeys as string[]).filter(
-                          (key) => key !== student.name
-                        );
-                    setSelectedKeys(newSelectedKeys);
-                    // Не закриваємо dropdown і не застосовуємо фільтр одразу
-                  }}
-                >
-                  {student.name}
-                </Checkbox>
-              ))}
-          </div>
-          <div className="filter-footer">
-            <Button
-              type="link"
-              onClick={() => {
-                confirm();
-              }}
-              className={`reset-filter-btn ${
-                (selectedKeys as string[]).length > 0 ? "ant-btn-link" : ""
-              }`}
-              style={{
-                color:
-                  (selectedKeys as string[]).length > 0 ? "#1890ff" : "#999",
-              }}
-            >
-              Reset
-            </Button>
-          </div>
-        </div>
-      ),
-      onFilter: (value, record) => record.studentName === value,
+      filters: students.map((student) => ({
+        text: student.name,
+        value: student.name,
+      })),
+      filterMultiple: true,
+      onFilter: (value, record) => {
+        console.log("🔍 Student filter:", {
+          value,
+          recordStudentName: record.studentName,
+        });
+        return Array.isArray(value)
+          ? value.includes(record.studentName)
+          : record.studentName === value;
+      },
       filterIcon: (filtered) => (
         <FilterOutlined style={{ color: filtered ? "#1890ff" : undefined }} />
       ),
@@ -570,54 +571,16 @@ export default function ClassesPage() {
       width: "15%",
       render: (text: string) => text,
       sorter: (a, b) => a.teacherName.localeCompare(b.teacherName),
-      filterDropdown: ({
-        setSelectedKeys,
-        selectedKeys,
-        confirm,
-        clearFilters,
-      }) => (
-        <div className="custom-filter-dropdown">
-          <div className="filter-list">
-            {teachers
-              .sort((a, b) => a.name.localeCompare(b.name))
-              .map((teacher) => (
-                <Checkbox
-                  key={teacher.id}
-                  checked={(selectedKeys as string[]).includes(teacher.name)}
-                  onChange={(e) => {
-                    const newSelectedKeys = e.target.checked
-                      ? [...selectedKeys, teacher.name]
-                      : (selectedKeys as string[]).filter(
-                          (key) => key !== teacher.name
-                        );
-                    setSelectedKeys(newSelectedKeys);
-                    // Не закриваємо dropdown і не застосовуємо фільтр одразу
-                  }}
-                >
-                  {teacher.name}
-                </Checkbox>
-              ))}
-          </div>
-          <div className="filter-footer">
-            <Button
-              type="link"
-              onClick={() => {
-                confirm();
-              }}
-              className={`reset-filter-btn ${
-                (selectedKeys as string[]).length > 0 ? "ant-btn-link" : ""
-              }`}
-              style={{
-                color:
-                  (selectedKeys as string[]).length > 0 ? "#1890ff" : "#999",
-              }}
-            >
-              Reset
-            </Button>
-          </div>
-        </div>
-      ),
-      onFilter: (value, record) => record.teacherName === value,
+      filters: teachers.map((teacher) => ({
+        text: teacher.name,
+        value: teacher.name,
+      })),
+      filterMultiple: true,
+      onFilter: (value, record) => {
+        return Array.isArray(value)
+          ? value.includes(record.teacherName)
+          : record.teacherName === value;
+      },
       filterIcon: (filtered) => (
         <FilterOutlined style={{ color: filtered ? "#1890ff" : undefined }} />
       ),
@@ -633,59 +596,18 @@ export default function ClassesPage() {
         </span>
       ),
       sorter: (a, b) => a.type.localeCompare(b.type),
-      filterDropdown: ({
-        setSelectedKeys,
-        selectedKeys,
-        confirm,
-        clearFilters,
-      }) => (
-        <div className="custom-filter-dropdown">
-          <div className="filter-list">
-            {[
-              { text: "Group", value: "group" },
-              { text: "Instant", value: "instant" },
-              { text: "Regular", value: "regular" },
-              { text: "Trial", value: "trial" },
-            ]
-              .sort((a, b) => a.text.localeCompare(b.text))
-              .map((classType) => (
-                <Checkbox
-                  key={classType.value}
-                  checked={(selectedKeys as string[]).includes(classType.value)}
-                  onChange={(e) => {
-                    const newSelectedKeys = e.target.checked
-                      ? [...selectedKeys, classType.value]
-                      : (selectedKeys as string[]).filter(
-                          (key) => key !== classType.value
-                        );
-                    setSelectedKeys(newSelectedKeys);
-                    // Не закриваємо dropdown і не застосовуємо фільтр одразу
-                  }}
-                >
-                  {classType.text}
-                </Checkbox>
-              ))}
-          </div>
-          <div className="filter-footer">
-            <Button
-              type="link"
-              onClick={() => {
-                confirm();
-              }}
-              className={`reset-filter-btn ${
-                (selectedKeys as string[]).length > 0 ? "ant-btn-link" : ""
-              }`}
-              style={{
-                color:
-                  (selectedKeys as string[]).length > 0 ? "#1890ff" : "#999",
-              }}
-            >
-              Reset
-            </Button>
-          </div>
-        </div>
-      ),
-      onFilter: (value, record) => record.type === value,
+      filters: [
+        { text: "Group", value: "group" },
+        { text: "Instant", value: "instant" },
+        { text: "Regular", value: "regular" },
+        { text: "Trial", value: "trial" },
+      ],
+      filterMultiple: true,
+      onFilter: (value, record) => {
+        return Array.isArray(value)
+          ? value.includes(record.type)
+          : record.type === value;
+      },
       filterIcon: (filtered) => (
         <FilterOutlined style={{ color: filtered ? "#1890ff" : undefined }} />
       ),
@@ -706,60 +628,18 @@ export default function ClassesPage() {
         </span>
       ),
       sorter: (a, b) => (a.status || "").localeCompare(b.status || ""),
-      filterDropdown: ({
-        setSelectedKeys,
-        selectedKeys,
-        confirm,
-        clearFilters,
-      }) => (
-        <div className="custom-filter-dropdown">
-          <div className="filter-list">
-            {[
-              { text: "Cancelled", value: "cancelled" },
-              { text: "Given", value: "given" },
-              { text: "Student No Show", value: "student_no_show" },
-              { text: "Teacher No Show", value: "teacher_no_show" },
-            ]
-              .sort((a, b) => a.text.localeCompare(b.text))
-              .map((status) => (
-                <Checkbox
-                  key={status.value}
-                  checked={(selectedKeys as string[]).includes(status.value)}
-                  onChange={(e) => {
-                    const newSelectedKeys = e.target.checked
-                      ? [...selectedKeys, status.value]
-                      : (selectedKeys as string[]).filter(
-                          (key) => key !== status.value
-                        );
-                    setSelectedKeys(newSelectedKeys);
-                    // Не закриваємо dropdown і не застосовуємо фільтр одразу
-                  }}
-                >
-                  {status.text}
-                </Checkbox>
-              ))}
-          </div>
-          <div className="filter-footer">
-            <Button
-              type="link"
-              onClick={() => {
-                confirm();
-              }}
-              className={`reset-filter-btn ${
-                (selectedKeys as string[]).length > 0 ? "ant-btn-link" : ""
-              }`}
-              style={{
-                color:
-                  (selectedKeys as string[]).length > 0 ? "#1890ff" : "#999",
-              }}
-            >
-              Reset
-            </Button>
-          </div>
-        </div>
-      ),
-      onFilter: (value, record) =>
-        record.status.toLowerCase() === String(value).toLowerCase(),
+      filters: [
+        { text: "Cancelled", value: "cancelled" },
+        { text: "Given", value: "given" },
+        { text: "Student No Show", value: "student_no_show" },
+        { text: "Teacher No Show", value: "teacher_no_show" },
+      ],
+      filterMultiple: true,
+      onFilter: (value, record) => {
+        return Array.isArray(value)
+          ? value.includes(record.status)
+          : record.status === value;
+      },
       filterIcon: (filtered) => (
         <FilterOutlined style={{ color: filtered ? "#1890ff" : undefined }} />
       ),
@@ -813,6 +693,16 @@ export default function ClassesPage() {
                 <div className="size-2 animate-pulse rounded-full bg-green-400" />
               </div>
               <div className="flex items-center gap-2">
+                <Button
+                  type="default"
+                  onClick={() => {
+                    localStorage.removeItem("classes");
+                    fetchClasses();
+                  }}
+                  className="rounded-lg border-gray-600 bg-gray-700 text-white font-medium shadow-lg transition-all hover:bg-gray-600"
+                >
+                  Sync with Calendar
+                </Button>
                 <Button
                   type="default"
                   onClick={handleDownloadCSV}
@@ -874,6 +764,11 @@ export default function ClassesPage() {
             handleCloseModal();
             // Примусово оновлюємо сторінку після створення через lessons
             localStorage.removeItem("classes"); // Clear localStorage to force server fetch
+            // Notify calendar about the update
+            localStorage.setItem(
+              "calendarEventsUpdated",
+              Date.now().toString()
+            );
             setTimeout(() => {
               fetchClasses();
             }, 1000);
@@ -904,6 +799,11 @@ export default function ClassesPage() {
             }
             // Примусово оновлюємо дані з сервера
             localStorage.removeItem("classes");
+            // Notify calendar about the update
+            localStorage.setItem(
+              "calendarEventsUpdated",
+              Date.now().toString()
+            );
             setTimeout(() => {
               fetchClasses();
             }, 1000);
