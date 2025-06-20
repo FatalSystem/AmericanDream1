@@ -7,7 +7,12 @@ interface User {
   first_name: string;
   last_name: string;
   email: string;
-  role?: string;
+  role?: {
+    id: number;
+    role_name: string;
+    createdAt: string | null;
+    updatedAt: string | null;
+  };
   role_name?: string;
 }
 
@@ -36,7 +41,12 @@ export const useAuth = create<AuthState>()(
         first_name: "Test",
         last_name: "User",
         email: "test@example.com",
-        role_name: "admin",
+        role: {
+          id: 1,
+          role_name: "admin",
+          createdAt: null,
+          updatedAt: null,
+        },
       },
       token: "test-token",
       menu: [],

@@ -145,7 +145,11 @@ export default function Dashboard() {
   // Додаємо логування для діагностики
   console.log("=== Dashboard Component ===");
   console.log("Auth user:", auth.user);
-  console.log("User role:", auth.user?.role_name);
+  console.log("Auth user keys:", Object.keys(auth.user || {}));
+  console.log("User role:", auth.user?.role?.role_name);
+  console.log("User role (old):", auth.user?.role);
+  console.log("User role_id:", (auth.user as any)?.role_id);
+  console.log("User roleName:", (auth.user as any)?.roleName);
   console.log("Class state data length:", classStateData.length);
   console.log("Teacher salary data length:", teacherSalaryData.length);
   console.log("Loading state:", loading);
@@ -449,8 +453,17 @@ export default function Dashboard() {
           hasLessonData = false;
         }
 
-        console.log("User role for data fetching:", auth.user?.role_name);
-        if (auth.user?.role_name === "student") {
+        console.log("User role for data fetching:", auth.user?.role?.role_name);
+        console.log("User role (old) for data fetching:", auth.user?.role);
+        console.log(
+          "User role_id for data fetching:",
+          (auth.user as any)?.role_id
+        );
+        console.log(
+          "User roleName for data fetching:",
+          (auth.user as any)?.roleName
+        );
+        if (auth.user?.role?.role_name === "student") {
           console.log("Fetching student-specific data...");
           // Only fetch specific student's data
           const res = await api.get(
@@ -471,9 +484,9 @@ export default function Dashboard() {
               : getFallbackClassesTaken(item),
           }));
         } else if (
-          auth.user?.role_name === "admin" ||
-          auth.user?.role_name === "manager" ||
-          auth.user?.role_name === "accountant"
+          auth.user?.role?.role_name === "admin" ||
+          auth.user?.role?.role_name === "manager" ||
+          auth.user?.role?.role_name === "accountant"
         ) {
           console.log("Fetching all students data...");
           // Fetch all students data
@@ -493,7 +506,7 @@ export default function Dashboard() {
         console.log("Setting class state data:", studentClassStats);
         setStateTypeData(studentClassStats);
 
-        if (auth.user?.role_name === "teacher") {
+        if (auth.user?.role?.role_name === "teacher") {
           console.log("Fetching teacher-specific salary data...");
           // Only fetch specific teacher's salary data
           const teacherData = await processTeacherSalaryData(
@@ -502,8 +515,8 @@ export default function Dashboard() {
           console.log("Teacher salary data:", teacherData);
           setTeacherSalaryData(teacherData);
         } else if (
-          auth.user?.role_name === "admin" ||
-          auth.user?.role_name === "accountant"
+          auth.user?.role?.role_name === "admin" ||
+          auth.user?.role?.role_name === "accountant"
         ) {
           console.log("Fetching all teachers salary data...");
           // Fetch all teachers data
@@ -513,9 +526,9 @@ export default function Dashboard() {
         }
 
         if (
-          auth.user?.role_name === "admin" ||
-          auth.user?.role_name === "teacher" ||
-          auth.user?.role_name === "accountant"
+          auth.user?.role?.role_name === "admin" ||
+          auth.user?.role?.role_name === "teacher" ||
+          auth.user?.role?.role_name === "accountant"
         ) {
           console.log("Fetching class types...");
           await api.get("/class-types");
@@ -628,7 +641,7 @@ export default function Dashboard() {
         }
 
         // Refresh student class stats if needed
-        if (auth.user?.role_name === "student") {
+        if (auth.user?.role?.role_name === "student") {
           // Only send date params if they exist
           const params = data.start_date && data.end_date ? data : {};
           const res = await api.get(
@@ -648,9 +661,9 @@ export default function Dashboard() {
           }));
           setStateTypeData(studentClassStats);
         } else if (
-          auth.user?.role_name === "admin" ||
-          auth.user?.role_name === "manager" ||
-          auth.user?.role_name === "accountant"
+          auth.user?.role?.role_name === "admin" ||
+          auth.user?.role?.role_name === "manager" ||
+          auth.user?.role?.role_name === "accountant"
         ) {
           // Only send date params if they exist
           const params = data.start_date && data.end_date ? data : {};
@@ -666,7 +679,7 @@ export default function Dashboard() {
         }
 
         // Teacher salary data fetching
-        if (auth.user?.role_name === "teacher") {
+        if (auth.user?.role?.role_name === "teacher") {
           // Only pass date params if they exist
           const dateParams =
             data.start_date && data.end_date ? data : undefined;
@@ -676,8 +689,8 @@ export default function Dashboard() {
           );
           setTeacherSalaryData(teacherData);
         } else if (
-          auth.user?.role_name === "admin" ||
-          auth.user?.role_name === "accountant"
+          auth.user?.role?.role_name === "admin" ||
+          auth.user?.role?.role_name === "accountant"
         ) {
           // Only pass date params if they exist
           const dateParams =
@@ -1038,8 +1051,8 @@ export default function Dashboard() {
           </div>
         )}
 
-        {(auth.user?.role_name === "admin" ||
-          auth.user?.role_name === "accountant") && (
+        {(auth.user?.role?.role_name === "admin" ||
+          auth.user?.role?.role_name === "accountant") && (
           <motion.div
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
@@ -1059,10 +1072,10 @@ export default function Dashboard() {
       </div>
 
       {/* Class State Table */}
-      {(auth.user?.role_name === "student" ||
-        auth.user?.role_name === "admin" ||
-        auth.user?.role_name === "manager" ||
-        auth.user?.role_name === "accountant") && (
+      {(auth.user?.role?.role_name === "student" ||
+        auth.user?.role?.role_name === "admin" ||
+        auth.user?.role?.role_name === "manager" ||
+        auth.user?.role?.role_name === "accountant") && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1109,9 +1122,9 @@ export default function Dashboard() {
       )}
 
       {/* Teacher Salary Table */}
-      {(auth.user?.role_name === "teacher" ||
-        auth.user?.role_name === "admin" ||
-        auth.user?.role_name === "accountant") && (
+      {(auth.user?.role?.role_name === "teacher" ||
+        auth.user?.role?.role_name === "admin" ||
+        auth.user?.role?.role_name === "accountant") && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

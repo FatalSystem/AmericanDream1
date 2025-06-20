@@ -2,6 +2,35 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../config";
 import "./TeachersPage.css";
+import { Table, Button, Spin, Card } from "antd";
+import type { TableColumnsType } from "antd";
+import { LoadingOutlined } from "@ant-design/icons";
+import "../../pages/home/dashboard.css";
+import { motion } from "framer-motion";
+
+// Card styles exactly like dashboard
+const cardStyles = {
+  header: {
+    background: "linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)",
+    borderRadius: "12px 12px 0 0",
+    padding: "12px 16px",
+    border: "none",
+    boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+    "@media (minWidth: 640px)": {
+      padding: "16px 24px",
+    },
+  },
+  body: {
+    padding: "10px",
+    borderRadius: "0 0 12px 12px",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    height: "auto",
+    maxHeight: "80vh",
+    "@media (minWidth: 640px)": {
+      padding: "20px",
+    },
+  },
+};
 
 interface TeacherForm {
   first_name: string;
@@ -181,66 +210,171 @@ export default function TeachersPage() {
     }
   };
 
-  return (
-    <div className="teachers-page">
-      <div className="teachers-header">
-        <h1>Teachers</h1>
-        <button className="add-teacher-btn" onClick={() => handleOpenModal()}>
-          Add Teacher
-        </button>
-      </div>
+  const columns: TableColumnsType<BackendTeacher> = [
+    {
+      title: "No",
+      key: "index",
+      width: "10%",
+      fixed: "left",
+      render: (_: any, __: any, index: number) => (
+        <span className="text-gray-600 dark:text-gray-400">{index + 1}</span>
+      ),
+    },
+    {
+      title: "First Name",
+      dataIndex: "first_name",
+      key: "first_name",
+      width: "15%",
+      sorter: (a, b) => a.first_name.localeCompare(b.first_name),
+      render: (text: string) => (
+        <span className="font-medium text-gray-900 dark:text-white">
+          {text}
+        </span>
+      ),
+    },
+    {
+      title: "Last Name",
+      dataIndex: "last_name",
+      key: "last_name",
+      width: "15%",
+      sorter: (a, b) => a.last_name.localeCompare(b.last_name),
+      render: (text: string) => (
+        <span className="font-medium text-gray-900 dark:text-white">
+          {text}
+        </span>
+      ),
+    },
+    {
+      title: "Email",
+      dataIndex: "email",
+      key: "email",
+      width: "25%",
+      sorter: (a, b) => a.email.localeCompare(b.email),
+      render: (text: string) => (
+        <span className="font-medium text-blue-600 dark:text-blue-400">
+          {text}
+        </span>
+      ),
+    },
+    {
+      title: "Trial Rate",
+      key: "trial_rate",
+      width: "12%",
+      render: (_: any, record: BackendTeacher) => (
+        <span className="font-medium text-green-600 dark:text-green-400">
+          ${record.rates?.find((r) => r.class_type_id === 1)?.rate || "-"}
+        </span>
+      ),
+    },
+    {
+      title: "Regular Rate",
+      key: "regular_rate",
+      width: "12%",
+      render: (_: any, record: BackendTeacher) => (
+        <span className="font-medium text-green-600 dark:text-green-400">
+          ${record.rates?.find((r) => r.class_type_id === 2)?.rate || "-"}
+        </span>
+      ),
+    },
+    {
+      title: "Training Rate",
+      key: "training_rate",
+      width: "12%",
+      render: (_: any, record: BackendTeacher) => (
+        <span className="font-medium text-green-600 dark:text-green-400">
+          ${record.rates?.find((r) => r.class_type_id === 3)?.rate || "-"}
+        </span>
+      ),
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      width: "15%",
+      fixed: "right",
+      render: (_: any, record: BackendTeacher) => (
+        <div className="flex gap-2">
+          <Button
+            type="text"
+            size="small"
+            onClick={() => handleOpenModal(record)}
+            className="text-blue-600 hover:text-blue-800"
+            title="Edit"
+          >
+            ✏️
+          </Button>
+          <Button
+            type="text"
+            size="small"
+            onClick={() => setDeleteId(record.id)}
+            className="text-red-600 hover:text-red-800"
+            title="Delete"
+          >
+            🗑️
+          </Button>
+        </div>
+      ),
+    },
+  ];
 
-      <div className="teachers-list">
-        <table className="teachers-table">
-          <thead>
-            <tr>
-              <th>No</th>
-              <th>First Name</th>
-              <th>Last Name</th>
-              <th>Email</th>
-              <th>Trial Rate</th>
-              <th>Regular Rate</th>
-              <th>Training Rate</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {teachers.map((teacher, idx) => (
-              <tr key={teacher.id}>
-                <td>{idx + 1}</td>
-                <td>{teacher.first_name}</td>
-                <td>{teacher.last_name}</td>
-                <td>{teacher.email}</td>
-                <td>
-                  {teacher.rates?.find((r) => r.class_type_id === 1)?.rate || "-"}
-                </td>
-                <td>
-                  {teacher.rates?.find((r) => r.class_type_id === 2)?.rate || "-"}
-                </td>
-                <td>
-                  {teacher.rates?.find((r) => r.class_type_id === 3)?.rate || "-"}
-                </td>
-                <td>
-                  <button
-                    className="edit-btn"
-                    onClick={() => handleOpenModal(teacher)}
-                    title="Edit"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    className="delete-btn"
-                    onClick={() => setDeleteId(teacher.id)}
-                    title="Delete"
-                  >
-                    🗑️
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+  const antIcon = <LoadingOutlined style={{ fontSize: 40 }} spin />;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="flex w-full flex-col gap-4 overflow-y-auto p-3 md:gap-6 md:p-6"
+    >
+      {/* Teachers Table */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="w-full overflow-hidden"
+      >
+        <Card
+          title={
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="text-lg font-semibold text-white">
+                  Teachers List
+                </span>
+                <div className="size-2 animate-pulse rounded-full bg-blue-400" />
+              </div>
+              <Button
+                type="primary"
+                onClick={() => handleOpenModal()}
+                className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 font-medium shadow-lg transition-all hover:from-blue-700 hover:to-indigo-700"
+              >
+                Add Teacher
+              </Button>
+            </div>
+          }
+          className="overflow-hidden rounded-xl border-0 shadow-lg transition-shadow hover:shadow-xl"
+          styles={{
+            header: cardStyles.header,
+            body: {
+              ...cardStyles.body,
+              padding: "0px",
+              overflow: "auto",
+            },
+          }}
+        >
+          <div className="w-full overflow-x-auto">
+            <Table
+              columns={columns}
+              dataSource={teachers}
+              rowKey="id"
+              pagination={{ pageSize: 10 }}
+              className="custom-table"
+              scroll={{ x: "100%", y: "calc(55vh - 120px)" }}
+              size="large"
+              sticky
+              style={{ width: "100%", minWidth: "800px" }}
+            />
+          </div>
+        </Card>
+      </motion.div>
 
       {showModal && (
         <div className="modal-overlay">
@@ -346,6 +480,6 @@ export default function TeachersPage() {
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

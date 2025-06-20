@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../config";
 import "./ClassesPage.css";
-import { Table, Button, Spin } from "antd";
+import { Table, Button, Spin, Card } from "antd";
 import type { TableColumnsType } from "antd";
 import { LoadingOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
@@ -10,9 +10,35 @@ import timezone from "dayjs/plugin/timezone";
 import utc from "dayjs/plugin/utc";
 import { useTimezone } from "../../contexts/TimezoneContext";
 import { DEFAULT_DB_TIMEZONE } from "../../utils/timezone";
+import "../../pages/home/dashboard.css";
+import { motion } from "framer-motion";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
+
+// Card styles exactly like dashboard
+const cardStyles = {
+  header: {
+    background: "linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)",
+    borderRadius: "12px 12px 0 0",
+    padding: "12px 16px",
+    border: "none",
+    boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+    "@media (minWidth: 640px)": {
+      padding: "16px 24px",
+    },
+  },
+  body: {
+    padding: "10px",
+    borderRadius: "0 0 12px 12px",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    height: "auto",
+    maxHeight: "80vh",
+    "@media (minWidth: 640px)": {
+      padding: "20px",
+    },
+  },
+};
 
 interface AddClassForm {
   date: string;
@@ -486,33 +512,70 @@ export default function ClassesPage() {
   const antIcon = <LoadingOutlined style={{ fontSize: 40 }} spin />;
 
   return (
-    <div className="classes-page">
-      <div className="classes-header">
-        <h1>Classes</h1>
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex gap-4">
-            <Button onClick={handleOpenModal}>Create Class</Button>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="flex w-full flex-col gap-4 overflow-y-auto p-3 md:gap-6 md:p-6"
+    >
+      {/* Classes Table */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="w-full overflow-hidden"
+      >
+        <Card
+          title={
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="text-lg font-semibold text-white">
+                  Classes List
+                </span>
+                <div className="size-2 animate-pulse rounded-full bg-green-400" />
+              </div>
+              <Button
+                type="primary"
+                onClick={handleOpenModal}
+                className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 font-medium shadow-lg transition-all hover:from-blue-700 hover:to-indigo-700"
+              >
+                Create Class
+              </Button>
+            </div>
+          }
+          className="overflow-hidden rounded-xl border-0 shadow-lg transition-shadow hover:shadow-xl"
+          styles={{
+            header: cardStyles.header,
+            body: {
+              ...cardStyles.body,
+              padding: "0px",
+              overflow: "auto",
+            },
+          }}
+        >
+          <div className="w-full overflow-x-auto">
+            {loading ? (
+              <div className="flex h-[400px] items-center justify-center">
+                <Spin indicator={antIcon} tip="Loading classes..." />
+              </div>
+            ) : error ? (
+              <div className="error">{error}</div>
+            ) : (
+              <Table
+                columns={columns}
+                dataSource={classes}
+                rowKey="id"
+                pagination={{ pageSize: 10 }}
+                className="custom-table"
+                scroll={{ x: "100%", y: "calc(55vh - 120px)" }}
+                size="large"
+                sticky
+                style={{ width: "100%", minWidth: "500px" }}
+              />
+            )}
           </div>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="flex h-[400px] items-center justify-center">
-          <Spin indicator={antIcon} tip="Loading classes..." />
-        </div>
-      ) : error ? (
-        <div className="error">{error}</div>
-      ) : (
-        <>
-          <Table
-            columns={columns}
-            dataSource={classes}
-            rowKey="id"
-            pagination={{ pageSize: 10 }}
-            className="classes-table"
-          />
-        </>
-      )}
+        </Card>
+      </motion.div>
 
       {showModal && (
         <div className="modal-overlay">
@@ -588,6 +651,6 @@ export default function ClassesPage() {
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

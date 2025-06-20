@@ -447,9 +447,18 @@ export default function EventCreateForm({
           start_date: startUTC,
           end_date: endUTC,
           class_status: classStatus,
+          teacher_id: initialTeacherId ? parseInt(initialTeacherId) : undefined,
         };
 
-        console.log("Submitting edit data:", eventData);
+        console.log("📝 EventCreateForm - Submitting edit data:", eventData);
+        console.log("👨‍🏫 EventCreateForm - Teacher info:", {
+          initialTeacherId,
+          teacher_id: initialTeacherId ? parseInt(initialTeacherId) : undefined,
+          initialTeacherIdType: typeof initialTeacherId,
+          parsedTeacherId: initialTeacherId
+            ? parseInt(initialTeacherId)
+            : undefined,
+        });
 
         if (onSuccess) {
           onSuccess(eventData);

@@ -436,6 +436,7 @@ const Calendar: React.FC = () => {
         : response.data.events?.rows || [];
 
       console.log("Processing events:", eventsArray.length);
+      console.log("📊 Raw events array sample:", eventsArray.slice(0, 3));
 
       // Let the backend handle reserved class checks
       await api.get("/calendar/check-reserved");
@@ -589,6 +590,17 @@ const Calendar: React.FC = () => {
 
       console.log("Processed events:", events);
       console.log("Events count:", events.length);
+      console.log(
+        "📊 Final processed events with teacher data:",
+        events.map((event) => ({
+          id: event.id,
+          title: event.title,
+          teacherId: event.teacherId,
+          teacher_name: event.teacher_name,
+          resourceId: event.resourceId,
+          extendedProps: event.extendedProps,
+        }))
+      );
 
       setEvents(events);
       setDisplayedEvents(events);
@@ -1518,8 +1530,15 @@ const Calendar: React.FC = () => {
     const event = clickInfo.event;
     const isNotAvailable = isUnavailableEvent(event);
 
-    console.log("Event clicked:", event);
-    console.log("Event extendedProps:", event.extendedProps);
+    console.log("🎯 Event clicked:", event);
+    console.log("📋 Event extendedProps:", event.extendedProps);
+    console.log(
+      "👨‍🏫 Available teachers:",
+      teachers.map((t) => ({
+        id: t.id,
+        name: `${t.first_name} ${t.last_name}`,
+      }))
+    );
 
     // Try to get teacherId from multiple possible sources
     let teacherId =
@@ -1530,7 +1549,15 @@ const Calendar: React.FC = () => {
       (event as any).teacher_id ||
       (event as any).resourceId;
 
-    console.log("Initial teacherId found:", teacherId);
+    console.log("🔍 Initial teacherId found:", teacherId);
+    console.log("🔍 Teacher ID sources:", {
+      extendedProps_teacherId: event.extendedProps?.teacherId,
+      extendedProps_teacher_id: event.extendedProps?.teacher_id,
+      extendedProps_resourceId: event.extendedProps?.resourceId,
+      event_teacherId: (event as any).teacherId,
+      event_teacher_id: (event as any).teacher_id,
+      event_resourceId: (event as any).resourceId,
+    });
 
     // Try to get teacher_name from multiple sources and find teacher by name if needed
     let teacher_name = event.extendedProps?.teacher_name || event.teacher_name;
@@ -1835,12 +1862,21 @@ const Calendar: React.FC = () => {
 
     console.log("Final teacherId for edit:", teacherId);
 
-    setEditEventData({
+    const editData = {
       ...eventDetails,
       class_type: eventDetails.class_type || "Regular-Lesson",
       class_status: statusValue,
       teacherId: teacherId,
+    };
+
+    console.log("📝 Setting editEventData:", editData);
+    console.log("👨‍🏫 Teacher data in editEventData:", {
+      teacherId: editData.teacherId,
+      teacher_name: editData.teacher_name,
+      originalTeacherId: eventDetails.teacherId,
     });
+
+    setEditEventData(editData);
 
     setIsEventDetailsOpen(false);
     setIsEditModalOpen(true);
@@ -1849,17 +1885,43 @@ const Calendar: React.FC = () => {
   // Додаю функцію для збереження редагованої події
   const handleUpdateEvent = async (updatedData: any) => {
     try {
-      console.log("Updating event with data:", updatedData);
+      console.log("🔄 Updating event with data:", updatedData);
+      console.log("📋 EditEventData:", editEventData);
 
-      // В режимі редагування оновлюємо тільки start_date, end_date та class_status
+      // Get teacher information from editEventData
+      const teacherId = editEventData?.teacherId;
+      const teacher = teachers.find((t) => String(t.id) === String(teacherId));
+      const teacher_name = teacher
+        ? `${teacher.first_name} ${teacher.last_name}`
+        : editEventData?.teacher_name || "Unknown Teacher";
+
+      console.log("👨‍🏫 Teacher info for update:", {
+        teacherId,
+        teacher,
+        teacher_name,
+        teachersCount: teachers.length,
+      });
+
+      // В режимі редагування оновлюємо start_date, end_date, class_status та teacher_id
       const eventDataForUpdate = {
         id: parseInt(updatedData.id),
         start_date: updatedData.start_date,
         end_date: updatedData.end_date,
         class_status: updatedData.class_status,
+        teacher_id: teacherId ? parseInt(teacherId) : undefined,
+        teacher_name: teacher_name,
+        // Додаємо додаткові поля для сумісності
+        teacherId: teacherId ? parseInt(teacherId) : undefined,
+        resourceId: teacherId ? parseInt(teacherId) : undefined,
       };
 
-      console.log("Final event data for update:", eventDataForUpdate);
+      console.log("📤 Final event data for update:", eventDataForUpdate);
+      console.log("🔍 Teacher ID details:", {
+        teacherId,
+        teacher_id: teacherId ? parseInt(teacherId) : undefined,
+        teacherIdType: typeof teacherId,
+        parsedTeacherId: teacherId ? parseInt(teacherId) : undefined,
+      });
 
       // Use POST /calendar/events for updating events
       const requestData = {
@@ -1868,11 +1930,17 @@ const Calendar: React.FC = () => {
         },
       };
 
-      console.log("Sending update request:", requestData);
+      console.log("📡 Sending update request:", requestData);
 
       const response = await api.post("/calendar/events", requestData);
 
-      console.log("Update response:", response.data);
+      console.log("✅ Update response:", response.data);
+      console.log("🔍 Response details:", {
+        status: response.status,
+        statusText: response.statusText,
+        data: response.data,
+        headers: response.headers,
+      });
 
       setIsEditModalOpen(false);
       setEditEventData(null);
@@ -1885,7 +1953,7 @@ const Calendar: React.FC = () => {
 
       message.success("Event updated successfully");
     } catch (error) {
-      console.error("Error updating event:", error);
+      console.error("❌ Error updating event:", error);
       message.error("Failed to update event");
     }
   };
@@ -2133,7 +2201,7 @@ const Calendar: React.FC = () => {
             headerToolbar={{
               left: "prev,next",
               center: "title",
-              right: "timeGridWeek,timeGridDay",
+              right: "dayGridMonth,timeGridWeek,timeGridDay",
             }}
             initialView="timeGridWeek"
             editable={true}
