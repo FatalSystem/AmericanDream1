@@ -1850,97 +1850,21 @@ const Calendar: React.FC = () => {
   const handleUpdateEvent = async (updatedData: any) => {
     try {
       console.log("Updating event with data:", updatedData);
-      console.log("Available teachers:", teachers);
 
-      // Try to get teacherId from multiple sources, prioritizing resourceId
-      const teacherId =
-        updatedData.resourceId ||
-        updatedData.teacherId ||
-        updatedData.teacher_id;
-      console.log("Processing event:", updatedData.id, "teacherId:", teacherId);
-
-      // Try to find teacher by ID first
-      let teacher = teachers.find((t) => String(t.id) === String(teacherId));
-      console.log("Found teacher by ID:", teacher);
-
-      // Log the search details
-      console.log("🔍 Teacher search details:", {
-        eventId: updatedData.id,
-        teacherId: teacherId,
-        teachersCount: teachers.length,
-        teacherIds: teachers.map((t) => t.id),
-        searchString: String(teacherId),
-        foundTeacher: teacher,
-      });
-
-      // If no teacher found by ID but we have a name, try to find by name
-      if (
-        !teacher &&
-        updatedData.teacher_name &&
-        updatedData.teacher_name !== "Unknown Teacher"
-      ) {
-        teacher = teachers.find(
-          (t) => `${t.first_name} ${t.last_name}` === updatedData.teacher_name
-        );
-        console.log("Found teacher by name:", teacher);
-      }
-
-      // Additional fallback: try to find teacher by any available field
-      if (!teacher) {
-        // Try to find by teacherId field if it's different from resourceId
-        if (
-          updatedData.teacherId &&
-          updatedData.teacherId !== updatedData.resourceId
-        ) {
-          teacher = teachers.find(
-            (t) => String(t.id) === String(updatedData.teacherId)
-          );
-          console.log("Found teacher by teacherId fallback:", teacher);
-        }
-
-        // Try to find by teacher_id field if it's different from resourceId
-        if (
-          !teacher &&
-          updatedData.teacher_id &&
-          updatedData.teacher_id !== updatedData.resourceId
-        ) {
-          teacher = teachers.find(
-            (t) => String(t.id) === String(updatedData.teacher_id)
-          );
-          console.log("Found teacher by teacher_id fallback:", teacher);
-        }
-      }
-
-      // Set default teacher name if no teacher found
-      const teacherName = teacher
-        ? `${teacher.first_name} ${teacher.last_name}`
-        : updatedData.teacher_name || "No Teacher Assigned";
-
-      const finalTeacherId = teacher ? String(teacher.id) : teacherId;
-
-      console.log("Final teacher info:", {
-        id: finalTeacherId,
-        name: teacherName,
-        originalTeacherId: teacherId,
-        foundTeacher: teacher,
-      });
-
-      // Add teacher information to the updated data
-      const eventDataWithTeacher = {
-        ...updatedData,
-        resourceId: finalTeacherId, // Keep resourceId for backend compatibility
-        teacher_id: finalTeacherId,
-        teacherId: finalTeacherId,
-        teacher_name: teacherName,
-        teacherName: teacherName, // Add for backend compatibility
+      // В режимі редагування оновлюємо тільки start_date, end_date та class_status
+      const eventDataForUpdate = {
+        id: parseInt(updatedData.id),
+        start_date: updatedData.start_date,
+        end_date: updatedData.end_date,
+        class_status: updatedData.class_status,
       };
 
-      console.log("Final event data with teacher:", eventDataWithTeacher);
+      console.log("Final event data for update:", eventDataForUpdate);
 
       // Use POST /calendar/events for updating events
       const requestData = {
         events: {
-          updated: [eventDataWithTeacher],
+          updated: [eventDataForUpdate],
         },
       };
 
@@ -1952,28 +1876,6 @@ const Calendar: React.FC = () => {
 
       setIsEditModalOpen(false);
       setEditEventData(null);
-
-      // Оновлюємо подію в календарі негайно
-      if (calendarRef.current) {
-        const calendarApi = calendarRef.current.getApi();
-        const event = calendarApi.getEventById(eventDataWithTeacher.id);
-        if (event) {
-          // Оновлюємо всі властивості події
-          event.setProp("title", eventDataWithTeacher.title);
-          event.setProp("resourceId", eventDataWithTeacher.resourceId);
-          event.setExtendedProp(
-            "teacher_name",
-            eventDataWithTeacher.teacher_name
-          );
-          event.setExtendedProp("teacherId", eventDataWithTeacher.teacherId);
-          event.setExtendedProp("teacher_id", eventDataWithTeacher.teacher_id);
-          event.setExtendedProp("class_type", eventDataWithTeacher.class_type);
-          event.setExtendedProp(
-            "class_status",
-            eventDataWithTeacher.class_status
-          );
-        }
-      }
 
       // Оновлюємо всі події
       await fetchEvents();
@@ -2654,7 +2556,7 @@ const Calendar: React.FC = () => {
                   disabled={eventDetails?.isNotAvailable}
                 />
               </Form.Item>
-              <Form.Item label="Teacher">
+              {/* <Form.Item label="Teacher">
                 <Select
                   value={
                     eventDetails?.teacherId
@@ -2675,7 +2577,7 @@ const Calendar: React.FC = () => {
                   style={{ width: "100%" }}
                   disabled={eventDetails?.isNotAvailable}
                 />
-              </Form.Item>
+              </Form.Item> */}
               <Form.Item label="Status">
                 <Select
                   value={eventDetails?.class_status}
@@ -2725,7 +2627,6 @@ const Calendar: React.FC = () => {
                         id: eventDetails.id,
                         startDate,
                         endDate,
-                        teacher_id: eventDetails.teacherId,
                         class_status: eventDetails.class_status,
                       });
 
@@ -2737,7 +2638,6 @@ const Calendar: React.FC = () => {
                               id: eventDetails.id,
                               startDate,
                               endDate,
-                              teacher_id: eventDetails.teacherId,
                               class_status: eventDetails.class_status,
                             },
                           ],
@@ -2936,6 +2836,8 @@ const Calendar: React.FC = () => {
               initialTeacherId={String(editEventData.teacherId || "")}
               initialClassType={editEventData.class_type}
               initialClassStatus={statusValue}
+              initialEventId={editEventData.id}
+              isEditMode={true}
             />
           )}
         </Modal>

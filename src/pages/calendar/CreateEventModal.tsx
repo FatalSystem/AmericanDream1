@@ -44,6 +44,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
             ? new Date(selectedDate.getTime() + 50 * 60000)
             : undefined
         }
+        isEditMode={false}
       />
     </Modal>
   );

@@ -68,5 +68,30 @@ export const calendarApi = {
       endDate
     });
     return response.data;
+  },
+
+  updateCalendarEvent: async (eventData: any) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    console.log("updateCalendarEvent - eventData to send:", eventData);
+    
+    const response = await fetch('/api/proxy/calendar/events', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        events: {
+          updated: [eventData], // Використовуємо 'updated' замість 'added'
+        },
+      }),
+    });
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error("Update failed with status:", response.status, "and body:", errorBody);
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
   }
 }; 

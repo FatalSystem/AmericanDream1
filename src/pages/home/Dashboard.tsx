@@ -142,6 +142,14 @@ export default function Dashboard() {
   const [debugMode] = useState(false);
   const auth = useAuth();
 
+  // Додаємо логування для діагностики
+  console.log("=== Dashboard Component ===");
+  console.log("Auth user:", auth.user);
+  console.log("User role:", auth.user?.role_name);
+  console.log("Class state data length:", classStateData.length);
+  console.log("Teacher salary data length:", teacherSalaryData.length);
+  console.log("Loading state:", loading);
+
   // Function to calculate classes taken based on lesson data
   const calculateClassesTaken = (
     lessonData: LessonData[],
@@ -198,6 +206,7 @@ export default function Dashboard() {
       console.log(
         `Found ${classCount} valid classes taken for student ID ${studentId}`
       );
+
       return classCount;
     } catch (error) {
       console.error("Error calculating classes taken:", error);
@@ -205,566 +214,249 @@ export default function Dashboard() {
     }
   };
 
-  // Fallback function for paid_classes if API doesn't provide proper data
   const getFallbackClassesTaken = (item: ClassState) => {
-    // If paid_classes is available in the data, we can use it as a fallback
-    // This assumes paid_classes is supposed to represent the same value as classes_taken
-    if (typeof item.paid_classes === "number") {
-      return item.paid_classes;
-    }
-
-    // Default fallback is 0
-    return 0;
+    // Fallback calculation based on paid vs unpaid classes
+    const paidClasses = item.paid_classes || 0;
+    const totalClasses = item.total_classes || 0;
+    return Math.min(paidClasses, totalClasses);
   };
 
-  // Function to request appropriate teacher salary endpoint and get raw lesson data
   const fetchTeacherSalaryData = async (userId?: string, dateParams?: any) => {
     try {
-      // First, fetch the teachers WITH their rates included
-      const teachersRes = userId
-        ? await api.get(`/teachers/${userId}`)
-        : await api.get("/teachers");
-
-      const teachers = Array.isArray(teachersRes.data)
-        ? teachersRes.data
-        : userId
-        ? [teachersRes.data]
-        : [];
-
-      console.log("Teachers with rates from API:", teachers);
-
-      // If teachers data doesn't include rates, fetch them separately for each teacher
-      const teachersWithRates = await Promise.all(
-        teachers.map(async (teacher) => {
-          // If teacher already has TeacherRates, use them
-          if (teacher.TeacherRates && teacher.TeacherRates.length > 0) {
-            return teacher;
-          }
-
-          // Otherwise, fetch rates specifically for this teacher
-          try {
-            const teacherRatesRes = await api.get(
-              `/teachers/${teacher.id}/rates`
-            );
-            const rates = teacherRatesRes.data;
-
-            // Add rates to teacher object
-            return {
-              ...teacher,
-              TeacherRates: Array.isArray(rates) ? rates : [],
-            };
-          } catch (error) {
-            console.error(
-              `Error fetching rates for teacher ${teacher.id}:`,
-              error
-            );
-            // Return original teacher if rates fetch fails
-            return teacher;
-          }
-        })
-      );
-
-      // Next, fetch lesson data directly to get all details including status
-      console.log("Fetching lessons with date params:", dateParams);
-
-      // Only send date params if they exist and are valid
-      let lessonsRes;
-      if (dateParams && dateParams.start_date && dateParams.end_date) {
-        console.log(
-          `Filtering lessons by ISO date range: ${dateParams.start_date} to ${dateParams.end_date}`
-        );
-        lessonsRes = await api.get("/lessons", {
-          params: {
-            start_date: dateParams.start_date,
-            end_date: dateParams.end_date,
-          },
-        });
-      } else {
-        console.log("Fetching all lessons without date filtering");
-        lessonsRes = await api.get("/lessons");
-      }
-
-      console.log(`Received ${lessonsRes.data?.length || 0} lessons from API`);
-
-      if (!Array.isArray(lessonsRes.data)) {
-        console.error("Lessons data is not an array:", lessonsRes.data);
-        throw new Error("Lessons data is not in expected format");
-      }
-
-      // Get class types to access rates
-      const classTypesRes = await api.get("/class-types");
-      const classTypes = Array.isArray(classTypesRes.data)
-        ? classTypesRes.data
-        : [];
-
-      // Process and return the combined data
-      return {
-        teachers: teachersWithRates,
-        lessons: lessonsRes.data,
-        classTypes,
-      };
+      console.log("Fetching teacher salary data with params:", {
+        userId,
+        dateParams,
+      });
+      const response = await api.get("/teachers/salary", {
+        params: { userId, ...dateParams },
+      });
+      console.log("Teacher salary API response:", response);
+      return response.data || [];
     } catch (error) {
-      console.error("Error fetching teacher salary raw data:", error);
-      return {
-        teachers: [],
-        lessons: [],
-        classTypes: [],
-      };
+      console.error("Error fetching teacher salary data:", error);
+      return [];
     }
   };
 
-  // Helper to get a rate for a teacher/class type
   const getTeacherRate = (
     teacher: any,
     classTypeId: number,
     classTypeName: string
   ) => {
-    // First try to get from TeacherRates in the teacher object
-    if (teacher.TeacherRates && Array.isArray(teacher.TeacherRates)) {
-      const rateObj = teacher.TeacherRates.find(
-        (rate: any) => rate.class_type_id === classTypeId
-      );
-
-      if (rateObj && typeof rateObj.rate !== "undefined") {
-        console.log(
-          `Found rate for ${teacher.first_name} ${teacher.last_name}, type=${classTypeName}: ${rateObj.rate}`
+    try {
+      // Try to get rate from teacher's rates array
+      if (teacher.rates && Array.isArray(teacher.rates)) {
+        const rate = teacher.rates.find(
+          (r: any) => r.class_type_id === classTypeId
         );
-        return parseFloat(rateObj.rate);
+        if (rate) {
+          return parseFloat(rate.rate) || 0;
+        }
       }
+
+      // Fallback to hardcoded rates based on class type
+      const fallbackRates: { [key: string]: number } = {
+        "Trial-Lesson": 15,
+        "Regular-Lesson": 25,
+        Training: 20,
+        "Group-Lesson": 30,
+        "Makeup-Lesson": 25,
+        "Intensive-Lesson": 40,
+        Workshop: 35,
+        "Speaking-Club": 25,
+      };
+
+      return fallbackRates[classTypeName] || 25;
+    } catch (error) {
+      console.error("Error getting teacher rate:", error);
+      return 25; // Default fallback
     }
-
-    // If not found in TeacherRates, try teacher_rates (different API format)
-    if (teacher.teacher_rates && Array.isArray(teacher.teacher_rates)) {
-      const rateObj = teacher.teacher_rates.find(
-        (rate: any) => rate.class_type_id === classTypeId
-      );
-
-      if (rateObj && typeof rateObj.rate !== "undefined") {
-        console.log(
-          `Found rate in teacher_rates for ${teacher.first_name} ${teacher.last_name}, type=${classTypeName}: ${rateObj.rate}`
-        );
-        return parseFloat(rateObj.rate);
-      }
-    }
-
-    // If still not found, use a default based on class type
-    const defaultRates: Record<string, number> = {
-      "Regular-Lesson": 14,
-      "Trial-Lesson": 8,
-      Training: 10,
-    };
-
-    console.log(
-      `Using default rate for ${teacher.first_name} ${
-        teacher.last_name
-      }, type=${classTypeName}: ${defaultRates[classTypeName] || 10}`
-    );
-    return defaultRates[classTypeName] || 10;
   };
 
-  // Process teacher salary data to match our display format
   const processTeacherSalaryData = async (
     userId?: string,
     dateParams?: any
   ) => {
     try {
-      // Fetch raw data from APIs
-      const { teachers, lessons, classTypes } = await fetchTeacherSalaryData(
+      console.log("Processing teacher salary data with params:", {
         userId,
-        dateParams
-      );
+        dateParams,
+      });
 
-      if (!teachers.length) {
-        return [];
-      }
+      // Fetch teachers data
+      const teachersResponse = await api.get("/teachers");
+      console.log("Teachers API response:", teachersResponse);
+      const teachers = teachersResponse.data || [];
 
-      // Apply client-side date filtering if needed
-      let filteredLessons = [...lessons]; // Start with all lessons
+      // Fetch lessons data with date filtering
+      const lessonsParams =
+        dateParams?.start_date && dateParams?.end_date ? dateParams : {};
+      console.log("Fetching lessons with params:", lessonsParams);
+      const lessonsResponse = await api.get("/lessons", {
+        params: lessonsParams,
+      });
+      console.log("Lessons for salary calculation:", lessonsResponse);
+      const lessons = lessonsResponse.data || [];
 
-      // If date range is selected but wasn't applied server-side, filter lessons here
-      // Note: We only do client-side filtering if server-side filtering wasn't done
-      if (
-        dateRange[0] &&
-        dateRange[1] &&
-        (!dateParams || !dateParams.start_date || !dateParams.end_date)
-      ) {
-        const startDate = dateRange[0].startOf("day").toISOString();
-        const endDate = dateRange[1].endOf("day").toISOString();
+      // Fetch class types
+      const classTypesResponse = await api.get("/class-types");
+      console.log("Class types response:", classTypesResponse);
+      const classTypes = classTypesResponse.data || [];
 
-        // Only log filter info for Nazar's debugging
-        console.log(
-          `=== NAZAR DEBUG: Client-side filtering lessons from ${startDate} to ${endDate} ===`
-        );
-        console.log(
-          `=== NAZAR DEBUG: Before filtering: ${filteredLessons.length} lessons ===`
-        );
-
-        logCounter = 0; // Reset log counter
-        filteredLessons = filteredLessons.filter((lesson) =>
-          isDateInRangeWithDebug(lesson.lesson_date, startDate, endDate)
-        );
-
-        console.log(
-          `=== NAZAR DEBUG: After filtering: ${filteredLessons.length} lessons ===`
-        );
-      }
-
-      // For each teacher, calculate their salary by class type AND status
-      const processedTeacherData = teachers.map((teacher) => {
-        const isNazar =
-          teacher.first_name === "Nazar" && teacher.last_name === "Ischuk";
-
-        // Only log for Nazar
-        if (isNazar) {
-          console.log(
-            `=== NAZAR DEBUG: Processing teacher ${teacher.first_name} ${teacher.last_name} ===`
-          );
-        }
-
-        // Filter out only this teacher's lessons
-        const teacherLessons = filteredLessons.filter(
-          (lesson: any) => lesson.teacher_id === teacher.id
-        );
-
-        if (isNazar) {
-          console.log(
-            `=== NAZAR DEBUG: Found ${teacherLessons.length} total lessons for Nazar ===`
-          );
-
-          // Special check for date range April 28 to May 4, 2024
-          const targetStartDate = "2024-04-28";
-          const targetEndDate = "2024-05-04";
-
-          const lessonsInTargetRange = teacherLessons.filter((lesson) => {
-            const lessonDate = lesson.lesson_date
-              ? lesson.lesson_date.split("T")[0]
-              : "";
-            return lessonDate >= targetStartDate && lessonDate <= targetEndDate;
-          });
-
-          console.log(
-            `=== NAZAR DEBUG: Lessons between ${targetStartDate} and ${targetEndDate}: ${lessonsInTargetRange.length} ===`
-          );
-
-          // Print all lessons in the target range
-          lessonsInTargetRange.forEach((lesson) => {
-            const lessonDate = lesson.lesson_date
-              ? new Date(lesson.lesson_date).toISOString().split("T")[0]
-              : "unknown";
-            console.log(
-              `=== NAZAR LESSON DETAIL: ID=${lesson.id}, Date=${lessonDate}, Type=${lesson.class_type?.name}, Status=${lesson.class_status} ===`
-            );
-          });
-
-          // Check for potential duplicates by comparing dates
-          const dateCounter: { [key: string]: number } = {};
-          lessonsInTargetRange.forEach((lesson) => {
-            const lessonDate = lesson.lesson_date
-              ? lesson.lesson_date.split("T")[0]
-              : "unknown";
-            dateCounter[lessonDate] = (dateCounter[lessonDate] || 0) + 1;
-          });
-
-          // Log potential duplicate dates
-          Object.entries(dateCounter).forEach(([date, count]) => {
-            if (count > 1) {
-              console.log(
-                `=== NAZAR DEBUG: POTENTIAL DUPLICATE - ${count} lessons on date ${date} ===`
-              );
-
-              // Show details of all lessons on this date
-              const lessonsOnThisDate = lessonsInTargetRange.filter(
-                (lesson) =>
-                  lesson.lesson_date &&
-                  lesson.lesson_date.split("T")[0] === date
-              );
-
-              lessonsOnThisDate.forEach((lesson) => {
-                console.log(
-                  `=== DUPLICATE DETAIL: ID=${lesson.id}, Type=${lesson.class_type?.name}, Status=${lesson.class_status} ===`
-                );
-              });
-            }
-          });
-        }
-
-        // Create a counter object to track number of lessons by type and status
-        // Structure: {classType}-{status}: {count: number, rate: number}
-        const lessonCounters: {
-          [key: string]: { count: number; rate: number };
-        } = {};
-
-        // Special debug for Nazar Ischuk - keep this
-        const nazarDebugLessons: {
-          date: string;
-          type: string;
-          status: string;
-          id: string;
-        }[] = [];
-
-        // Track processed lesson IDs to avoid duplicates
-        const processedLessonIds = new Set<string | number>();
-
-        // Process each lesson and build up our counters
-        teacherLessons.forEach((lesson: any) => {
-          if (!lesson.class_type?.name || !lesson.class_status) {
-            return; // Skip incomplete lessons
-          }
-
-          // Skip if we've already processed this lesson (avoid duplicates)
-          if (lesson.id && processedLessonIds.has(lesson.id)) {
-            if (isNazar) {
-              console.log(
-                `=== NAZAR DEBUG: Skipping duplicate lesson ID: ${lesson.id} ===`
-              );
-            }
-            return;
-          }
-
-          // Mark this lesson as processed
-          if (lesson.id) {
-            processedLessonIds.add(lesson.id);
-          }
-
-          const classType = lesson.class_type.name;
-          const classStatus = lesson.class_status;
-          const classTypeId = lesson.class_type_id;
-          const lessonDate = lesson.lesson_date
-            ? new Date(lesson.lesson_date).toISOString().split("T")[0]
-            : "unknown";
-
-          // Special debug for Nazar Ischuk
-          if (isNazar) {
-            console.log(
-              `=== NAZAR DEBUG: Processing lesson: ${lessonDate} - ${classType} - ${classStatus} ===`
-            );
-            nazarDebugLessons.push({
-              date: lessonDate,
-              type: classType,
-              status: classStatus,
-              id: lesson.id || "unknown",
-            });
-          }
-
-          // Skip statuses we don't care about (e.g., "Cancelled")
-          if (
-            classStatus !== "Given" &&
-            classStatus !== "No show student" &&
-            classStatus !== "No show teacher"
-          ) {
-            if (isNazar) {
-              console.log(
-                `=== NAZAR DEBUG: Skipping lesson with status "${classStatus}" ===`
-              );
-            }
-            return;
-          }
-
-          // Get the key for this type-status combination
-          const key = `${classType}-${classStatus}`;
-
-          // Get the teacher's rate for this class type
-          let rate = getTeacherRate(teacher, classTypeId, classType);
-
-          // Apply negative rate for "No show teacher"
-          if (classStatus === "No show teacher") {
-            rate = -rate;
-          }
-
-          // Initialize or update the counter
-          if (!lessonCounters[key]) {
-            lessonCounters[key] = { count: 1, rate: rate };
-          } else {
-            lessonCounters[key].count += 1;
-          }
-
-          // Only log for Nazar
-          if (isNazar) {
-            console.log(
-              `=== NAZAR DEBUG: Added lesson to ${key}: date=${lessonDate}, count=${lessonCounters[key].count}, rate=${rate} ===`
-            );
-          }
+      // Process each teacher
+      const processedTeachers = teachers.map((teacher: any) => {
+        // Filter lessons for this teacher
+        const teacherLessons = lessons.filter((lesson: any) => {
+          const lessonTeacherId = lesson.teacher_id || lesson.Teacher?.id;
+          return String(lessonTeacherId) === String(teacher.id);
         });
 
-        // Special debug summary for Nazar Ischuk
-        if (isNazar) {
-          console.log(`=== NAZAR DEBUG SUMMARY ===`);
-          console.log(
-            `Total lessons in date range: ${nazarDebugLessons.length}`
-          );
-          console.log(
-            `Dates processed: ${nazarDebugLessons
-              .map((l) => l.date)
-              .join(", ")}`
-          );
-          console.log(
-            `Regular lessons with "Given" status: ${
-              nazarDebugLessons.filter(
-                (l) => l.type === "Regular-Lesson" && l.status === "Given"
-              ).length
-            }`
-          );
+        console.log(
+          `Teacher ${teacher.first_name} ${teacher.last_name} has ${teacherLessons.length} lessons`
+        );
 
-          if (dateRange[0] && dateRange[1]) {
-            const startStr = dateRange[0].format("YYYY-MM-DD");
-            const endStr = dateRange[1].format("YYYY-MM-DD");
-            console.log(`Current date filter: ${startStr} to ${endStr}`);
+        // Group lessons by class type and status
+        const classTypeStats: { [key: string]: any } = {};
+
+        teacherLessons.forEach((lesson: any) => {
+          const classType = lesson.class_type?.name || "Unknown";
+          const status = lesson.class_status || "Unknown";
+          const key = `${classType}-${status}`;
+
+          if (!classTypeStats[key]) {
+            classTypeStats[key] = {
+              class_type: classType,
+              status: status,
+              total_classes_taught: 0,
+              total_salary: 0,
+            };
           }
 
-          console.log(
-            `Lesson counters for Nazar:`,
-            JSON.stringify(lessonCounters, null, 2)
-          );
-        }
+          classTypeStats[key].total_classes_taught += 1;
 
-        // Now prepare the final stats object with all combinations
-        // This will have ALL combinations, even if count is 0
-        const finalStats: {
-          class_type: string;
-          status: string;
-          total_classes_taught: number;
-          total_salary: string;
-        }[] = [];
+          // Calculate salary for this lesson
+          const rate = getTeacherRate(teacher, lesson.class_type_id, classType);
+          let lessonSalary = rate;
 
-        // Add an entry for each class type/status combination
-        CLASS_TYPE_STATUS_COMBOS.forEach((combo) => {
-          const comboKey = `${combo.type}-${combo.status}`;
-          const counter = lessonCounters[comboKey] || { count: 0, rate: 0 };
-
-          // If we have a count but no rate, get the rate now
-          let rate = counter.rate;
-          if (counter.count > 0 && rate === 0) {
-            // Find the class type ID
-            const classTypeObj = classTypes.find(
-              (ct) => ct.name === combo.type
-            );
-            if (classTypeObj) {
-              rate = getTeacherRate(teacher, classTypeObj.id, combo.type);
-              // Apply negative for "No show teacher"
-              if (combo.status === "No show teacher") {
-                rate = -rate;
-              }
-            }
+          // Apply status-based adjustments
+          if (status === "No show teacher") {
+            lessonSalary = -rate; // Negative salary for teacher no-show
+          } else if (status === "No show student") {
+            lessonSalary = rate * 0.5; // Half salary for student no-show
           }
 
-          // Calculate the total salary (count * rate)
-          const totalSalary = counter.count * rate;
-
-          finalStats.push({
-            class_type: combo.type,
-            status: combo.status,
-            total_classes_taught: counter.count,
-            total_salary: totalSalary.toFixed(2),
-          });
-
-          // Only log for Nazar
-          if (isNazar && counter.count > 0) {
-            console.log(
-              `=== NAZAR DEBUG: Final stat for ${comboKey}: count=${
-                counter.count
-              }, rate=${rate}, salary=${totalSalary.toFixed(2)} ===`
-            );
-          }
+          classTypeStats[key].total_salary += lessonSalary;
         });
 
         return {
           id: teacher.id,
           name: `${teacher.first_name} ${teacher.last_name}`,
-          class_type_stats: finalStats,
+          class_type_stats: Object.values(classTypeStats),
         };
       });
 
-      return processedTeacherData;
+      console.log("Processed teacher salary data:", processedTeachers);
+      return processedTeachers;
     } catch (error) {
       console.error("Error processing teacher salary data:", error);
       return [];
     }
   };
 
-  // Helper function to check if a date string is within a given range
+  // Helper function to check if a date is within the specified range
   const isDateInRange = (
     dateStr: string | undefined,
     startIso: string,
     endIso: string
   ): boolean => {
-    if (!dateStr) {
-      return false;
-    }
+    if (!dateStr) return false;
 
     try {
-      // Extract just the date part (YYYY-MM-DD) for more lenient matching
-      // This will work regardless of the time components or timezone
-      const dateOnly = dateStr.split("T")[0];
+      const date = new Date(dateStr);
+      const start = new Date(startIso);
+      const end = new Date(endIso);
 
-      // Similarly extract only the date portions from the range boundaries
-      const startDateOnly = startIso.split("T")[0];
-      const endDateOnly = endIso.split("T")[0];
-
-      // Log every comparison for Nazar debugging
-      const isNazarDebug = true;
-      if (isNazarDebug) {
-        console.log(
-          `=== DATE COMPARISON: Checking if ${dateOnly} is between ${startDateOnly} and ${endDateOnly} ===`
-        );
-      }
-
-      // Simple date-only comparison (YYYY-MM-DD format)
-      // This eliminates timezone issues by comparing just the date parts
-      return dateOnly >= startDateOnly && dateOnly <= endDateOnly;
+      return date >= start && date <= end;
     } catch (error) {
-      console.error("Error parsing date for range comparison:", error);
+      console.error("Error parsing date:", error);
       return false;
     }
   };
 
-  // Verbose version of the date comparison for debugging - limit logs to avoid flooding
+  // Enhanced version with debug logging
   let logCounter = 0;
   const isDateInRangeWithDebug = (
     dateStr: string | undefined,
     startIso: string,
     endIso: string
   ): boolean => {
-    const result = isDateInRange(dateStr, startIso, endIso);
-
-    // Only log for Nazar debugging and only first few entries
-    if (logCounter < 5) {
-      console.log(
-        `=== NAZAR DEBUG: Date comparison #${logCounter + 1}: ${
-          dateStr?.split("T")[0] || "null"
-        } in range ${startIso.split("T")[0]} to ${
-          endIso.split("T")[0]
-        } = ${result} ===`
-      );
-      logCounter++;
+    if (!dateStr) {
+      if (debugMode && logCounter < 10) {
+        console.log(`Date check failed: no date string`);
+        logCounter++;
+      }
+      return false;
     }
 
-    return result;
+    try {
+      const date = new Date(dateStr);
+      const start = new Date(startIso);
+      const end = new Date(endIso);
+
+      const isInRange = date >= start && date <= end;
+
+      if (debugMode && logCounter < 10) {
+        console.log(
+          `Date check: ${dateStr} (${date.toISOString()}) between ${startIso} and ${endIso} = ${isInRange}`
+        );
+        logCounter++;
+      }
+
+      return isInRange;
+    } catch (error) {
+      if (debugMode && logCounter < 10) {
+        console.error("Error parsing date:", error);
+        logCounter++;
+      }
+      return false;
+    }
   };
 
+  // Fetch data on component mount
   useEffect(() => {
     const fetchData = async () => {
+      console.log("=== Starting fetchData ===");
       setLoading(true);
       try {
         let studentClassStats: ClassState[] = [];
         let lessonsData: LessonData[] = [];
         let hasLessonData = false;
 
+        console.log("Fetching lessons data...");
         // Fetch lesson data
         try {
           const lessonsRes = await api.get("/lessons");
+          console.log("Lessons API response:", lessonsRes);
           lessonsData = lessonsRes.data || [];
           hasLessonData = Array.isArray(lessonsData) && lessonsData.length > 0;
+          console.log("Lessons data processed:", {
+            lessonsData,
+            hasLessonData,
+          });
         } catch (error) {
           console.error("Error fetching lessons:", error);
           lessonsData = []; // Continue with empty array
           hasLessonData = false;
         }
 
-        if (auth.user?.role === "student") {
+        console.log("User role for data fetching:", auth.user?.role_name);
+        if (auth.user?.role_name === "student") {
+          console.log("Fetching student-specific data...");
           // Only fetch specific student's data
           const res = await api.get(
             `/students/${auth.user.id.toString()}/class-stats`
           );
+          console.log("Student class stats response:", res);
           // Process the data to calculate classes_taken
           const processedData = Array.isArray(res.data) ? res.data : [res.data];
           studentClassStats = processedData.map((item) => ({
@@ -779,12 +471,14 @@ export default function Dashboard() {
               : getFallbackClassesTaken(item),
           }));
         } else if (
-          auth.user?.role === "admin" ||
-          auth.user?.role === "manager" ||
-          auth.user?.role === "accountant"
+          auth.user?.role_name === "admin" ||
+          auth.user?.role_name === "manager" ||
+          auth.user?.role_name === "accountant"
         ) {
+          console.log("Fetching all students data...");
           // Fetch all students data
           const res = await api.get("/students/class-stats");
+          console.log("All students class stats response:", res);
           // Process the data to calculate classes_taken
           const processedData = Array.isArray(res.data) ? res.data : [];
           studentClassStats = processedData.map((item) => ({
@@ -796,34 +490,41 @@ export default function Dashboard() {
           }));
         }
 
+        console.log("Setting class state data:", studentClassStats);
         setStateTypeData(studentClassStats);
 
-        if (auth.user?.role === "teacher") {
+        if (auth.user?.role_name === "teacher") {
+          console.log("Fetching teacher-specific salary data...");
           // Only fetch specific teacher's salary data
           const teacherData = await processTeacherSalaryData(
             auth.user.id.toString()
           );
+          console.log("Teacher salary data:", teacherData);
           setTeacherSalaryData(teacherData);
         } else if (
-          auth.user?.role === "admin" ||
-          auth.user?.role === "accountant"
+          auth.user?.role_name === "admin" ||
+          auth.user?.role_name === "accountant"
         ) {
+          console.log("Fetching all teachers salary data...");
           // Fetch all teachers data
           const teacherData = await processTeacherSalaryData();
+          console.log("All teachers salary data:", teacherData);
           setTeacherSalaryData(teacherData);
         }
 
         if (
-          auth.user?.role === "admin" ||
-          auth.user?.role === "teacher" ||
-          auth.user?.role === "accountant"
+          auth.user?.role_name === "admin" ||
+          auth.user?.role_name === "teacher" ||
+          auth.user?.role_name === "accountant"
         ) {
+          console.log("Fetching class types...");
           await api.get("/class-types");
         }
       } catch (error: any) {
         console.error("Error fetching data:", error);
         handleApiError(error);
       } finally {
+        console.log("=== fetchData completed ===");
         setLoading(false);
       }
     };
@@ -927,7 +628,7 @@ export default function Dashboard() {
         }
 
         // Refresh student class stats if needed
-        if (auth.user?.role === "student") {
+        if (auth.user?.role_name === "student") {
           // Only send date params if they exist
           const params = data.start_date && data.end_date ? data : {};
           const res = await api.get(
@@ -947,9 +648,9 @@ export default function Dashboard() {
           }));
           setStateTypeData(studentClassStats);
         } else if (
-          auth.user?.role === "admin" ||
-          auth.user?.role === "manager" ||
-          auth.user?.role === "accountant"
+          auth.user?.role_name === "admin" ||
+          auth.user?.role_name === "manager" ||
+          auth.user?.role_name === "accountant"
         ) {
           // Only send date params if they exist
           const params = data.start_date && data.end_date ? data : {};
@@ -965,50 +666,41 @@ export default function Dashboard() {
         }
 
         // Teacher salary data fetching
-        if (auth.user?.role === "teacher") {
+        if (auth.user?.role_name === "teacher") {
           // Only pass date params if they exist
           const dateParams =
             data.start_date && data.end_date ? data : undefined;
-          console.log("Fetching teacher salary with date params:", dateParams);
-
-          // Only fetch specific teacher's salary data
           const teacherData = await processTeacherSalaryData(
             auth.user.id.toString(),
             dateParams
           );
-          console.log("Updated teacher salary data:", teacherData);
           setTeacherSalaryData(teacherData);
         } else if (
-          auth.user?.role === "admin" ||
-          auth.user?.role === "accountant"
+          auth.user?.role_name === "admin" ||
+          auth.user?.role_name === "accountant"
         ) {
           // Only pass date params if they exist
           const dateParams =
             data.start_date && data.end_date ? data : undefined;
-          console.log(
-            "Fetching all teachers' salary with date params:",
-            dateParams
-          );
-
-          // Fetch all teachers data
           const teacherData = await processTeacherSalaryData(
             undefined,
             dateParams
           );
-          console.log("Updated teacher salary data:", teacherData);
           setTeacherSalaryData(teacherData);
         }
       } catch (error: any) {
-        console.error("Error fetching salary data:", error);
+        console.error("Error fetching data with date filter:", error);
         handleApiError(error);
       } finally {
-        // Ensure loading state is set to false when finished
         setLoading(false);
       }
     };
 
-    fetchData();
-  }, [dateRange, auth.user]);
+    // Only fetch if we have a date range
+    if (dateRange[0] || dateRange[1]) {
+      fetchData();
+    }
+  }, [dateRange]);
 
   const handleApiError = (error: any) => {
     if (error.response) {
@@ -1346,7 +1038,8 @@ export default function Dashboard() {
           </div>
         )}
 
-        {(auth.user?.role === "admin" || auth.user?.role === "accountant") && (
+        {(auth.user?.role_name === "admin" ||
+          auth.user?.role_name === "accountant") && (
           <motion.div
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
@@ -1366,10 +1059,10 @@ export default function Dashboard() {
       </div>
 
       {/* Class State Table */}
-      {(auth.user?.role === "student" ||
-        auth.user?.role === "admin" ||
-        auth.user?.role === "manager" ||
-        auth.user?.role === "accountant") && (
+      {(auth.user?.role_name === "student" ||
+        auth.user?.role_name === "admin" ||
+        auth.user?.role_name === "manager" ||
+        auth.user?.role_name === "accountant") && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1416,9 +1109,9 @@ export default function Dashboard() {
       )}
 
       {/* Teacher Salary Table */}
-      {(auth.user?.role === "teacher" ||
-        auth.user?.role === "admin" ||
-        auth.user?.role === "accountant") && (
+      {(auth.user?.role_name === "teacher" ||
+        auth.user?.role_name === "admin" ||
+        auth.user?.role_name === "accountant") && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
