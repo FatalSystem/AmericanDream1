@@ -43,14 +43,14 @@ const Words: React.FC<{ studentId: string; studentName: string }> = ({
 
   useEffect(() => {
     if (!permissionsLoading) {
-      if (user?.role != "teacher") {
+      if (user?.role?.role_name != "teacher") {
         if (!permissions.read) {
           navigate("/login");
           toast.error("You don't have permission to view this page", {
             theme: "dark",
           });
         } else {
-          if (user?.role === "student") {
+          if (user?.role?.role_name === "student") {
             fetchWords(user.id.toString());
           }
         }
@@ -167,7 +167,7 @@ const Words: React.FC<{ studentId: string; studentName: string }> = ({
       },
     ] as TableColumnsType<any>
   ).concat(
-    user?.role === "teacher"
+    user?.role?.role_name === "teacher"
       ? [
           {
             title: "Date",
@@ -303,7 +303,7 @@ const Words: React.FC<{ studentId: string; studentName: string }> = ({
         bodyStyle={cardStyles.body}
         extra={
           <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row">
-            {user?.role === "teacher" && (
+            {user?.role?.role_name === "teacher" && (
               <div className="flex flex-col gap-2 xs:flex-row">
                 <motion.button
                   whileHover={{ scale: 1.02 }}

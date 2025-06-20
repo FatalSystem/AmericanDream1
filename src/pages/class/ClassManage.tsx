@@ -135,7 +135,8 @@ const ClassManage: React.FC = () => {
 
   // Check if user is a manager or admin
   const isManagerOrAdmin =
-    auth.user?.role === "manager" || auth.user?.role === "admin";
+    auth.user?.role?.role_name === "manager" ||
+    auth.user?.role?.role_name === "admin";
 
   // Filter class status options based on user role
   const filteredClassStatusOptions = CLASS_STATUS_OPTIONS.filter((option) => {
@@ -640,10 +641,10 @@ const ClassManage: React.FC = () => {
 
   const tableData = lessons
     .filter((lesson) => {
-      if (auth.user?.role === "student") {
+      if (auth.user?.role?.role_name === "student") {
         return lesson.Student?.id === Number(auth.user.id);
       }
-      if (auth.user?.role === "teacher") {
+      if (auth.user?.role?.role_name === "teacher") {
         return lesson.Teacher?.id === Number(auth.user.id);
       }
       return true;
@@ -760,7 +761,7 @@ const ClassManage: React.FC = () => {
                 </p>
                 {auth.user?.role && (
                   <p className="mt-2 text-xs">
-                    Current user role: {auth.user.role}
+                    Current user role: {auth.user.role?.role_name}
                     {auth.user.id && ` (ID: ${auth.user.id})`}
                   </p>
                 )}

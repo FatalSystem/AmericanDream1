@@ -53,12 +53,10 @@ const ClassInfo: React.FC<{ studentId: string; studentName: string }> = ({
 
   useEffect(() => {
     if (!permissionsLoading) {
-      if (user?.role !== "teacher" && !permissions.read) {
-        navigate("/login");
-        toast.error("You don't have permission to view this page", {
-          theme: "dark",
-        });
-      } else if (user?.role === "student") {
+      if (user?.role?.role_name !== "teacher" && !permissions.read) {
+        navigate("/");
+        return;
+      } else if (user?.role?.role_name === "student") {
         fetchClassInfo(user.id.toString());
       }
     }
@@ -219,7 +217,7 @@ const ClassInfo: React.FC<{ studentId: string; studentName: string }> = ({
         <span className="font-medium text-gray-900 dark:text-white">{val}</span>
       ),
     },
-    ...(user?.role === "teacher"
+    ...(user?.role?.role_name === "teacher"
       ? [
           {
             title: "Actions",
@@ -272,7 +270,7 @@ const ClassInfo: React.FC<{ studentId: string; studentName: string }> = ({
           maxHeight: "100vh",
         }}
         extra={
-          user?.role === "teacher" && (
+          user?.role?.role_name === "teacher" && (
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
