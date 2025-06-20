@@ -310,6 +310,27 @@ export default function ClassesPage() {
 
       console.log(`Events after filtering: ${mapped.length}`);
       console.log("Final mapped events:", mapped);
+
+      // Логуємо всі унікальні типи
+      const uniqueTypes = [...new Set(mapped.map((event) => event.type))];
+      console.log("🔍 All unique class types in data:", uniqueTypes);
+
+      // Тимчасове логування всіх Trial записів
+      const trialRecords = mapped.filter((event) =>
+        event.type.includes("Trial")
+      );
+      console.log("🔍 All Trial records:", trialRecords);
+
+      // Логуємо всі записи з їх типами
+      console.log(
+        "🔍 All records with types:",
+        mapped.map((event) => ({
+          id: event.id,
+          type: event.type,
+          studentName: event.studentName,
+        }))
+      );
+
       console.log("✅ Classes page synchronization completed");
 
       // Verify sorting is correct
@@ -597,16 +618,63 @@ export default function ClassesPage() {
       ),
       sorter: (a, b) => a.type.localeCompare(b.type),
       filters: [
-        { text: "Group", value: "group" },
-        { text: "Instant", value: "instant" },
-        { text: "Regular", value: "regular" },
-        { text: "Trial", value: "trial" },
+        { text: "Group", value: "Group" },
+        { text: "Instant", value: "Instant" },
+        { text: "Regular", value: "Regular" },
+        { text: "Trial", value: "Trial" },
       ],
       filterMultiple: true,
       onFilter: (value, record) => {
-        return Array.isArray(value)
-          ? value.includes(record.type)
-          : record.type === value;
+        console.log("🔍 Class Type filter:", {
+          value,
+          recordType: record.type,
+          recordId: record.id,
+          studentName: record.studentName,
+        });
+
+        // Якщо вибрано "Trial", включаємо і "Trial-Lesson"
+        if (value === "Trial") {
+          const matches =
+            record.type === "Trial" || record.type === "Trial-Lesson";
+          console.log(
+            "Trial check:",
+            matches,
+            "for value:",
+            value,
+            "and record type:",
+            record.type,
+            "record ID:",
+            record.id
+          );
+          return matches;
+        }
+
+        // Якщо вибрано "Regular", включаємо і "Regular-Lesson"
+        if (value === "Regular") {
+          const matches =
+            record.type === "Regular" || record.type === "Regular-Lesson";
+          console.log(
+            "Regular check:",
+            matches,
+            "for value:",
+            value,
+            "and record type:",
+            record.type
+          );
+          return matches;
+        }
+
+        // Для інших типів - точний збіг
+        const matches = record.type === value;
+        console.log(
+          "Direct match:",
+          matches,
+          "for value:",
+          value,
+          "and record type:",
+          record.type
+        );
+        return matches;
       },
       filterIcon: (filtered) => (
         <FilterOutlined style={{ color: filtered ? "#1890ff" : undefined }} />
