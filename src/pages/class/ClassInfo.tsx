@@ -136,7 +136,6 @@ const ClassInfo: React.FC<{ studentId: string; studentName: string }> = ({
           unit,
           can_do: canDo,
           notes,
-          teacher_id: user?.id,
         });
         setClassInfos(response.data.classInfo);
         toast.success("Class info updated successfully!", { theme: "dark" });

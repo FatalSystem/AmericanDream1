@@ -35,21 +35,22 @@ interface EventCreateFormProps {
   initialClassStatus?: string;
   initialEventId?: string;
   isEditMode: boolean;
+  editEventData?: any;
 }
 
 const classTypes = [
-  { value: "Trial-Lesson", label: "Trial Lesson", duration: 30 },
+  { value: "Trial-Lesson", label: "Trial Lesson ", duration: 30 },
   { value: "Regular-Lesson", label: "Regular Lesson", duration: 50 },
   { value: "Training-Lesson", label: "Training Lesson", duration: 50 },
   {
     value: "Unavailable-Lesson",
-    label: "Unavailable Lesson",
+    label: "Unavailable",
     duration: 50,
     noStudent: true,
   },
-  { value: "Group-Lesson", label: "Group Lesson", duration: 50 },
-  { value: "Makeup-Lesson", label: "Makeup Lesson", duration: 50 },
-  { value: "Intensive-Lesson", label: "Intensive Lesson", duration: 80 },
+  { value: "Group-Lesson", label: "Group", duration: 50 },
+  { value: "Makeup-Lesson", label: "Makeup", duration: 50 },
+  { value: "Intensive-Lesson", label: "Intensive", duration: 80 },
   { value: "Workshop-Lesson", label: "Workshop", duration: 80, isGroup: true },
   {
     value: "Speaking-Club",
@@ -282,6 +283,7 @@ export default function EventCreateForm({
   initialClassStatus = "scheduled",
   initialEventId,
   isEditMode,
+  editEventData,
 }: EventCreateFormProps) {
   console.log("EventCreateForm props:", {
     initialTeacherId,
@@ -292,6 +294,23 @@ export default function EventCreateForm({
       id: t.id,
       name: `${t.first_name} ${t.last_name}`,
     })),
+  });
+
+  console.log("🔍 EventCreateForm - Detailed teacher info:", {
+    initialTeacherId,
+    initialTeacherIdType: typeof initialTeacherId,
+    initialTeacherIdValue: initialTeacherId,
+    isEditMode,
+    initialClassType,
+    teachersAvailable: teachers.length > 0,
+    allTeachers: teachers.map((t) => ({
+      id: t.id,
+      name: `${t.first_name} ${t.last_name}`,
+      idType: typeof t.id,
+    })),
+    foundTeacher: teachers.find(
+      (t) => String(t.id) === String(initialTeacherId)
+    ),
   });
 
   console.log("Initial render with class types:", classTypes);
@@ -447,18 +466,12 @@ export default function EventCreateForm({
           start_date: startUTC,
           end_date: endUTC,
           class_status: classStatus,
-          teacher_id: initialTeacherId ? parseInt(initialTeacherId) : undefined,
+          student_id: editEventData?.studentId
+            ? parseInt(editEventData.studentId)
+            : undefined,
         };
 
         console.log("📝 EventCreateForm - Submitting edit data:", eventData);
-        console.log("👨‍🏫 EventCreateForm - Teacher info:", {
-          initialTeacherId,
-          teacher_id: initialTeacherId ? parseInt(initialTeacherId) : undefined,
-          initialTeacherIdType: typeof initialTeacherId,
-          parsedTeacherId: initialTeacherId
-            ? parseInt(initialTeacherId)
-            : undefined,
-        });
 
         if (onSuccess) {
           onSuccess(eventData);
@@ -476,6 +489,13 @@ export default function EventCreateForm({
       if (!initialTeacherId) {
         setLoading(false);
         toast.error("Please select a teacher");
+        return;
+      }
+
+      // For unavailability events, ensure we have a teacher
+      if (initialClassType === "unavailable" && !initialTeacherId) {
+        setLoading(false);
+        toast.error("Teacher is required for unavailability events");
         return;
       }
 
@@ -788,14 +808,14 @@ export default function EventCreateForm({
             </div>
             <div style={{ marginBottom: "4px" }}>
               <strong>Teacher:</strong>{" "}
-              {
-                teachers.find((t) => String(t.id) === String(initialTeacherId))
-                  ?.first_name
-              }{" "}
-              {
-                teachers.find((t) => String(t.id) === String(initialTeacherId))
-                  ?.last_name
-              }
+              {(() => {
+                const teacher = teachers.find(
+                  (t) => String(t.id) === String(initialTeacherId)
+                );
+                return teacher
+                  ? `${teacher.first_name} ${teacher.last_name}`
+                  : "Not selected";
+              })()}
             </div>
             <div style={{ marginBottom: "4px" }}>
               <strong>Duration:</strong> {duration} minutes

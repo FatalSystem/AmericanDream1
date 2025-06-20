@@ -3,7 +3,6 @@ import api from "../config";
 export const calendarApi = {
   createCalendar: async (eventData: any) => {
     // Prepare camelCase fields for backend compatibility
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const data = {
       ...eventData,
       startDate: eventData.start_date,
@@ -17,23 +16,18 @@ export const calendarApi = {
     console.log("createCalendar - original eventData:", eventData);
     console.log("createCalendar - processed data:", data);
     
-    const response = await fetch('/api/proxy/calendar/events', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      credentials: 'include',
-      body: JSON.stringify({
+    try {
+      const response = await api.post('/calendar/events', {
         events: {
           added: [data],
         },
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      });
+      
+      return response.data;
+    } catch (error) {
+      console.error("Create failed:", error);
+      throw error;
     }
-    return await response.json();
   },
   
   getCalendar: async () => {
@@ -71,27 +65,36 @@ export const calendarApi = {
   },
 
   updateCalendarEvent: async (eventData: any) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    console.log("updateCalendarEvent - eventData to send:", eventData);
+    console.log("updateCalendarEvent - original eventData:", eventData);
     
-    const response = await fetch('/api/proxy/calendar/events', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      credentials: 'include',
-      body: JSON.stringify({
+    // Prepare camelCase fields for backend compatibility
+    const data = {
+      id: eventData.id,
+      title: eventData.title,
+      startDate: eventData.start_date || eventData.start,
+      endDate: eventData.end_date || eventData.end,
+      teacher_id: eventData.teacher_id || eventData.extendedProps?.teacherId || eventData.extendedProps?.teacher_id,
+      student_id: eventData.student_id || eventData.extendedProps?.studentId || eventData.extendedProps?.student_id,
+      teacher_name: eventData.teacher_name || eventData.extendedProps?.teacher_name,
+      student_name: eventData.student_name || eventData.extendedProps?.student_name_text,
+      class_status: eventData.class_status || eventData.extendedProps?.class_status,
+      class_type: eventData.class_type || eventData.extendedProps?.class_type,
+      payment_status: eventData.payment_status || eventData.extendedProps?.payment_status,
+    };
+    
+    console.log("updateCalendarEvent - processed data:", data);
+    
+    try {
+      const response = await api.post('/calendar/events', {
         events: {
-          updated: [eventData], // Використовуємо 'updated' замість 'added'
+          updated: [data],
         },
-      }),
-    });
-    if (!response.ok) {
-      const errorBody = await response.text();
-      console.error("Update failed with status:", response.status, "and body:", errorBody);
-      throw new Error(`HTTP error! status: ${response.status}`);
+      });
+      
+      return response.data;
+    } catch (error) {
+      console.error("Update failed:", error);
+      throw error;
     }
-    return await response.json();
   }
 }; 

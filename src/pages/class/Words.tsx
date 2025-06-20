@@ -236,7 +236,6 @@ const Words: React.FC<{ studentId: string; studentName: string }> = ({
       const response = await api.put(`/words/${editingRecord?.id}`, {
         english_word: english,
         translation_word: translation,
-        teacher_id: user?.id,
       });
 
       setWords(response.data.words);

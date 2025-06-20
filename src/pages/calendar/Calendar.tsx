@@ -37,6 +37,7 @@ import { Event } from "../../../api/calendar";
 import { DateTime } from "luxon";
 import { DEFAULT_DB_TIMEZONE } from "../../utils/timezone";
 import type { LessonStatus } from "./EventCreateForm";
+import { toast } from "react-toastify";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -86,6 +87,7 @@ interface EventExtendedProps {
   teacherId?: string;
   teacher_name?: string;
   studentId?: string;
+  student_name_text?: string;
   class_status?: string;
   class_type?: string;
   payment_status?: string;
@@ -114,6 +116,7 @@ interface CustomEventInput extends EventInput {
     teacherId?: string;
     teacher_name?: string;
     studentId?: string;
+    student_name_text?: string;
     class_status?: string;
     class_type?: string;
   };
@@ -124,6 +127,7 @@ type CalendarEvent = CustomEventInput & {
     teacherId?: string;
     teacher_name?: string;
     studentId?: string;
+    student_name_text?: string;
     class_status?: string;
     class_type?: string;
   };
@@ -146,10 +150,10 @@ interface EventForm {
 }
 
 const classTypes = [
-  { value: "trial", label: "Trial Lesson", duration: 30 },
-  { value: "regular", label: "Regular Lesson", duration: 50 },
-  { value: "instant", label: "Instant Lesson", duration: 50 },
-  { value: "group", label: "Group Lesson", duration: 50 },
+  { value: "trial", label: "Trial", duration: 30 },
+  { value: "regular", label: "Regular", duration: 50 },
+  { value: "instant", label: "Instant", duration: 50 },
+  { value: "group", label: "Group", duration: 50 },
   { value: "training", label: "Training", duration: 50, adminOnly: true },
 ];
 
@@ -282,7 +286,7 @@ const Calendar: React.FC = () => {
     studentId: null,
     start: "",
     end: "",
-    classType: "Regular Lesson",
+    classType: "Regular",
     status: "scheduled",
     duration: "50 min",
     repeating: {
@@ -437,6 +441,17 @@ const Calendar: React.FC = () => {
 
       console.log("Processing events:", eventsArray.length);
       console.log("📊 Raw events array sample:", eventsArray.slice(0, 3));
+      console.log(
+        "🔍 Raw events with teacher data:",
+        eventsArray.map((event) => ({
+          id: event.id,
+          teacher_id: event.teacher_id,
+          teacherId: event.teacherId,
+          resourceId: event.resourceId,
+          teacher_name: event.teacher_name,
+          teacherName: event.teacherName,
+        }))
+      );
 
       // Let the backend handle reserved class checks
       await api.get("/calendar/check-reserved");
@@ -584,6 +599,7 @@ const Calendar: React.FC = () => {
             duration: finalEnd.diff(tzStart, "minute"),
             hoursUntilStart: hoursUntilStart,
             studentId: event.studentId || event.student_id,
+            student_name_text: event.student_name_text,
           },
         };
       });
@@ -598,6 +614,8 @@ const Calendar: React.FC = () => {
           teacherId: event.teacherId,
           teacher_name: event.teacher_name,
           resourceId: event.resourceId,
+          student_name_text: event.extendedProps?.student_name_text,
+          studentId: event.extendedProps?.studentId,
           extendedProps: event.extendedProps,
         }))
       );
@@ -883,7 +901,7 @@ const Calendar: React.FC = () => {
           startDate: startInUtc.format(),
           endDate: endInUtc.format(),
           duration:
-            eventForm.classType === "Trial Lesson"
+            eventForm.classType === "Trial"
               ? 30
               : endInUserTz.diff(startInUserTz, "minute"),
         };
@@ -947,7 +965,7 @@ const Calendar: React.FC = () => {
         studentId: null,
         start: "",
         end: "",
-        classType: "Regular Lesson",
+        classType: "Regular",
         status: "scheduled",
         duration: "50 min",
         repeating: {
@@ -1063,30 +1081,22 @@ const Calendar: React.FC = () => {
   };
 
   const handleCreateButtonClick = () => {
-    console.log("Create button clicked");
-    console.log("Current modal state:", isCreateModalOpen);
-
-    // Reset form but preserve teacher if already selected
-    const currentTeacherId = eventForm.teacherId;
     setEventForm({
-      teacherId: currentTeacherId, // Preserve selected teacher
+      teacherId: null,
       studentId: null,
       start: "",
       end: "",
-      classType: "Regular Lesson",
+      classType: "Regular",
       status: "scheduled",
       duration: "50 min",
+      payment_status: "unpaid",
       repeating: {
         type: "none",
         days: [],
-        weeks: 2,
+        weeks: 1,
       },
     });
-    setEventError("");
-    setStudentSearch("");
-
     setIsCreateModalOpen(true);
-    console.log("Modal state after setState:", true);
   };
 
   const resetEventForm = () => {
@@ -1095,17 +1105,16 @@ const Calendar: React.FC = () => {
       studentId: null,
       start: "",
       end: "",
-      classType: "Regular Lesson",
+      classType: "Regular",
       status: "scheduled",
       duration: "50 min",
+      payment_status: "unpaid",
       repeating: {
         type: "none",
         days: [],
-        weeks: 2,
+        weeks: 1,
       },
     });
-    setEventError("");
-    setStudentSearch("");
   };
 
   useEffect(() => {
@@ -1197,6 +1206,14 @@ const Calendar: React.FC = () => {
     const startTime = dayjs(event.start).format("HH:mm");
     const endTime = dayjs(event.end).format("HH:mm");
 
+    console.log("🕐 Time formatting:", {
+      eventStart: event.start,
+      eventEnd: event.end,
+      startTime,
+      endTime,
+      timezone,
+    });
+
     const isNotAvailable = isUnavailableEvent(event);
 
     // Use the full title without removing RSVR prefix
@@ -1211,19 +1228,15 @@ const Calendar: React.FC = () => {
     } else {
       switch (classType.toLowerCase()) {
         case "trial":
-        case "trial lesson":
           backgroundColor = "#ff9800";
           break;
         case "regular":
-        case "regular lesson":
           backgroundColor = "#2196f3";
           break;
         case "instant":
-        case "instant lesson":
           backgroundColor = "#4caf50";
           break;
         case "group":
-        case "group lesson":
           backgroundColor = "#9c27b0";
           break;
         default:
@@ -1322,392 +1335,173 @@ const Calendar: React.FC = () => {
     );
   };
 
-  const handleAvailabilityChange = (field: string, value: any) => {
-    setAvailabilityForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleAddUnavailable = async () => {
-    if (
-      !availabilityForm.teacherId ||
-      !availabilityForm.date ||
-      !availabilityForm.startTime ||
-      !availabilityForm.endTime
-    ) {
-      message.error("Please fill in all fields");
-      return;
-    }
-
-    const dateStr = availabilityForm.date.format("YYYY-MM-DD");
-    const startStr = availabilityForm.startTime.format("HH:mm");
-    const endStr = availabilityForm.endTime.format("HH:mm");
-    // Use dayjs.tz to create correct datetime in selected timezone
-    const start = dayjs.tz(`${dateStr}T${startStr}`, timezone).toISOString();
-    const end = dayjs.tz(`${dateStr}T${endStr}`, timezone).toISOString();
-
-    try {
-      // Send to backend
-      const eventData = {
-        class_type: "unavailable",
-        student_id: 0,
-        teacher_id: availabilityForm.teacherId,
-        class_status: "scheduled",
-        payment_status: "reserved",
-        startDate: start,
-        endDate: end,
-        duration: dayjs(end).diff(dayjs(start), "minute"),
-        isUnavailable: true,
-        title: "Unavailable",
-      };
-      await api.post("/calendar/events", {
-        events: {
-          added: [eventData],
-        },
-      });
-      message.success("Unavailable time added to calendar");
-      setIsAvailabilityModalOpen(false);
-      setAvailabilityForm({
-        teacherId: null,
-        date: null,
-        repeat: false,
-        startTime: null,
-        endTime: null,
-        repeatDays: [],
-        repeatWeeks: 1,
-      });
-      fetchEvents();
-    } catch (error) {
-      message.error("Failed to save unavailable time");
-    }
-  };
-
-  // Update event handlers to handle unavailable events
-  const handleEventDrop = async (dropInfo: any) => {
-    const event = dropInfo.event;
-
-    if (isUnavailableEvent(event)) {
-      dropInfo.revert();
-      message.error("Cannot modify unavailable time slots");
-      return;
-    }
-
-    try {
-      const startDate = dayjs(event.start).tz(DEFAULT_DB_TIMEZONE).format();
-      const endDate = dayjs(event.end).tz(DEFAULT_DB_TIMEZONE).format();
-
-      // Check if time slot is already occupied (excluding the current event)
-      const isBusy = await checkTimeSlotBusyExcludingEvent(
-        startDate,
-        endDate,
-        timezone,
-        event.id
-      );
-      if (isBusy) {
-        dropInfo.revert();
-        message.error("This time is already occupied by another event.");
-        return;
-      }
-
-      // Get teacher information
-      const teacherId = event.extendedProps?.teacherId || event.teacherId;
-      const teacher = teachers.find((t) => String(t.id) === String(teacherId));
-      const teacher_name = teacher
-        ? `${teacher.first_name} ${teacher.last_name}`
-        : event.extendedProps?.teacher_name || "Unknown Teacher";
-
-      // Update event with all necessary information
-      await api.post("/calendar/events", {
-        events: {
-          updated: [
-            {
-              id: parseInt(event.id),
-              startDate,
-              endDate,
-              teacherId: teacherId,
-              teacher_id: teacherId,
-              resourceId: teacherId,
-              teacher_name: teacher_name,
-              teacherName: teacher_name,
-            },
-          ],
-        },
-      });
-
-      message.success("Event updated successfully");
-      // Важливо: чекаємо завершення fetchEvents
-      await fetchEvents();
-
-      // Force FullCalendar to refresh
-      if (calendarRef.current) {
-        const calendarApi = calendarRef.current.getApi();
-        calendarApi.refetchEvents();
-      }
-
-      // Helper function to update displayedEvents based on current filters
-      updateDisplayedEvents();
-
-      console.log("🔄 Event drop/resize completed, events should be refreshed");
-    } catch (error) {
-      console.error("Error updating event:", error);
-      message.error("Failed to update event");
-      dropInfo.revert();
-    }
-  };
-
-  const handleEventResize = async (resizeInfo: any) => {
-    const event = resizeInfo.event;
-
-    if (isUnavailableEvent(event)) {
-      resizeInfo.revert();
-      message.error("Cannot modify unavailable time slots");
-      return;
-    }
-
-    try {
-      const startDate = dayjs(event.start).tz(DEFAULT_DB_TIMEZONE).format();
-      const endDate = dayjs(event.end).tz(DEFAULT_DB_TIMEZONE).format();
-
-      // Check if time slot is already occupied (excluding the current event)
-      const isBusy = await checkTimeSlotBusyExcludingEvent(
-        startDate,
-        endDate,
-        timezone,
-        event.id
-      );
-      if (isBusy) {
-        resizeInfo.revert();
-        message.error("This time is already occupied by another event.");
-        return;
-      }
-
-      // Get teacher information
-      const teacherId = event.extendedProps?.teacherId || event.teacherId;
-      const teacher = teachers.find((t) => String(t.id) === String(teacherId));
-      const teacher_name = teacher
-        ? `${teacher.first_name} ${teacher.last_name}`
-        : event.extendedProps?.teacher_name || "Unknown Teacher";
-
-      // Update event with all necessary information
-      await api.post("/calendar/events", {
-        events: {
-          updated: [
-            {
-              id: parseInt(event.id),
-              startDate,
-              endDate,
-              teacherId: teacherId,
-              teacher_id: teacherId,
-              resourceId: teacherId,
-              teacher_name: teacher_name,
-              teacherName: teacher_name,
-            },
-          ],
-        },
-      });
-
-      message.success("Event updated successfully");
-      // Важливо: чекаємо завершення fetchEvents
-      await fetchEvents();
-
-      // Force FullCalendar to refresh
-      if (calendarRef.current) {
-        const calendarApi = calendarRef.current.getApi();
-        calendarApi.refetchEvents();
-      }
-
-      // Helper function to update displayedEvents based on current filters
-      updateDisplayedEvents();
-
-      console.log("🔄 Event drop/resize completed, events should be refreshed");
-    } catch (error) {
-      console.error("Error updating event:", error);
-      message.error("Failed to update event");
-      resizeInfo.revert();
-    }
-  };
-
-  // Update event click handler to handle unavailable events
   const handleEventClick = (clickInfo: any) => {
     const event = clickInfo.event;
-    const isNotAvailable = isUnavailableEvent(event);
-
-    console.log("🎯 Event clicked:", event);
-    console.log("📋 Event extendedProps:", event.extendedProps);
-    console.log(
-      "👨‍🏫 Available teachers:",
-      teachers.map((t) => ({
-        id: t.id,
-        name: `${t.first_name} ${t.last_name}`,
-      }))
-    );
-
-    // Try to get teacherId from multiple possible sources
-    let teacherId =
-      event.extendedProps?.teacherId ||
-      event.extendedProps?.teacher_id ||
-      event.extendedProps?.resourceId ||
-      (event as any).teacherId ||
-      (event as any).teacher_id ||
-      (event as any).resourceId;
-
-    console.log("🔍 Initial teacherId found:", teacherId);
-    console.log("🔍 Teacher ID sources:", {
-      extendedProps_teacherId: event.extendedProps?.teacherId,
-      extendedProps_teacher_id: event.extendedProps?.teacher_id,
-      extendedProps_resourceId: event.extendedProps?.resourceId,
-      event_teacherId: (event as any).teacherId,
-      event_teacher_id: (event as any).teacher_id,
-      event_resourceId: (event as any).resourceId,
-    });
-
-    // Try to get teacher_name from multiple sources and find teacher by name if needed
-    let teacher_name = event.extendedProps?.teacher_name || event.teacher_name;
-    let finalTeacherId = teacherId;
-
-    // If we have teacher_name but no teacherId, try to find teacher by name
-    if (!teacherId && teacher_name && teacher_name !== "Unknown Teacher") {
-      const teacher = teachers.find(
-        (t) => `${t.first_name} ${t.last_name}` === teacher_name
-      );
-      if (teacher) {
-        finalTeacherId = String(teacher.id);
-        console.log(
-          "Found teacher by name:",
-          teacher,
-          "teacherId:",
-          finalTeacherId
-        );
-      }
-    }
-
-    // If we have teacherId but no teacher_name, try to find teacher by id
-    if (teacherId && (!teacher_name || teacher_name === "Unknown Teacher")) {
-      const teacher = teachers.find((t) => String(t.id) === String(teacherId));
-      if (teacher) {
-        teacher_name = `${teacher.first_name} ${teacher.last_name}`;
-        console.log(
-          "Found teacher by ID:",
-          teacher,
-          "teacher_name:",
-          teacher_name
-        );
-      }
-    }
-
-    console.log("Final teacher info:", {
-      teacherId: finalTeacherId,
-      teacher_name,
-    });
-
-    const classType = event.extendedProps?.class_type || "";
-
-    setEventDetails({
+    console.log("🎯 Event clicked:", {
       id: event.id,
       title: event.title,
       start: event.start,
-      end: event.end || dayjs(event.start).add(1, "hour").toDate(),
-      teacherId: finalTeacherId,
-      class_type: classType,
-      isNotAvailable: isNotAvailable,
-      teacher_name: teacher_name,
-      student_name_text: event.title
-        .replace(
-          /^(Trial|Regular|Instant|Group|Trial Lesson|Regular Lesson|Instant Lesson|Group Lesson)\s*-\s*/gi,
-          ""
-        )
-        .replace(/^RSVR\s*-\s*/gi, "")
-        .replace(/^Not Available\s*-\s*/gi, "")
-        .trim(),
-      rawEvent: event,
+      end: event.end,
+      extendedProps: event.extendedProps,
+      student_name_text: event.extendedProps?.student_name_text,
+      studentId: event.extendedProps?.studentId,
     });
 
-    setStatusValue(event.extendedProps?.class_status || "scheduled");
+    // Check if this is an unavailable event
+    const isNotAvailable = isUnavailableEvent(event);
+
+    const eventDetailsData: EventDetails = {
+      id: event.id,
+      title: event.title,
+      start: event.start,
+      end: event.end,
+      teacherId: event.extendedProps?.teacherId,
+      studentId: event.extendedProps?.studentId,
+      class_status: event.extendedProps?.class_status,
+      isNotAvailable: isNotAvailable,
+      rawEvent: event,
+      student_name_text: event.extendedProps?.student_name_text,
+      class_type: event.extendedProps?.class_type || "",
+      teacher_name: event.extendedProps?.teacher_name,
+    };
+
+    console.log("📋 Event details for modal:", eventDetailsData);
+
+    setEventDetails(eventDetailsData);
+    setStatusValue(
+      mapServerStatus(eventDetailsData.class_status || "scheduled")
+    );
     setIsEventDetailsOpen(true);
   };
 
   const handleSaveEvent = async (eventId: string) => {
-    if (eventDetails?.isNotAvailable) {
-      message.error("Cannot modify unavailable time slots");
-      return;
-    }
-
     try {
       console.log("🔧 handleSaveEvent called with:", {
         eventId,
         statusValue,
         eventDetails,
+        originalStatus: eventDetails?.class_status,
+        mappedStatus: statusValue,
+        isNotAvailable: eventDetails?.isNotAvailable,
       });
 
-      // Get teacher information
-      const teacherId = eventDetails?.teacherId;
-      const teacher = teachers.find((t) => String(t.id) === String(teacherId));
-      const teacher_name = teacher
-        ? `${teacher.first_name} ${teacher.last_name}`
-        : eventDetails?.teacher_name || "Unknown Teacher";
+      if (eventDetails?.isNotAvailable) {
+        // For unavailable events, update the time using the calendarApi
+        // Convert times to UTC for the API
+        const startUTC = dayjs
+          .tz(eventDetails.start, timezone)
+          .utc()
+          .format("YYYY-MM-DDTHH:mm:ss");
+        const endUTC = dayjs
+          .tz(eventDetails.end, timezone)
+          .utc()
+          .format("YYYY-MM-DDTHH:mm:ss");
 
-      // Use POST /calendar/events for updating event status
-      const response = await api.post("/calendar/events", {
-        events: {
-          updated: [
-            {
-              id: parseInt(eventId),
-              class_status: statusValue,
-              resourceId: teacherId ? parseInt(teacherId) : undefined,
-              teacher_id: teacherId ? parseInt(teacherId) : undefined,
-              teacherId: teacherId ? parseInt(teacherId) : undefined,
-              teacher_name: teacher_name,
-              teacherName: teacher_name,
-            },
-          ],
-        },
-      });
+        const updateData = {
+          id: eventId,
+          start: startUTC, // Змінено з start_date на start
+          end: endUTC, // Змінено з end_date на end
+          class_status: statusValue,
+          class_type: eventDetails.class_type || "Unavailable",
+          teacher_id: eventDetails.teacherId,
+        };
 
-      console.log("✅ Event status updated successfully:", response.data);
-      console.log("Save event request details:", {
-        eventId: eventId,
-        statusValue: statusValue,
-        teacherId: teacherId,
-        teacher_name: teacher_name,
-        requestData: {
-          events: {
-            updated: [
-              {
-                id: parseInt(eventId),
-                class_status: statusValue,
-                resourceId: teacherId ? parseInt(teacherId) : undefined,
-                teacher_id: teacherId ? parseInt(teacherId) : undefined,
-                teacherId: teacherId ? parseInt(teacherId) : undefined,
-                teacher_name: teacher_name,
-                teacherName: teacher_name,
-              },
-            ],
-          },
-        },
-      });
+        console.log("🔄 Updating unavailable event with:", {
+          originalStart: eventDetails.start,
+          originalEnd: eventDetails.end,
+          convertedStart: startUTC,
+          convertedEnd: endUTC,
+          timezone: timezone,
+          updateData,
+        });
 
-      message.success("Event updated successfully");
+        const response = await calendarApi.updateCalendarEvent(updateData);
+
+        console.log(
+          "✅ handleSaveEvent - Response for unavailable event:",
+          response
+        );
+
+        // Додаткове логування для відстеження
+        console.log("🔄 After API call - checking if event was updated...");
+
+        message.success("Unavailable time slot updated successfully");
+
+        console.log("Save event request details:", {
+          eventId: eventId,
+          statusValue: statusValue,
+          endpoint:
+            "POST /calendar/events (via calendarApi.updateCalendarEvent)",
+          requestBody: updateData,
+        });
+      } else {
+        // Use PATCH /calendar/events/:id/status for updating only event status
+        const response = await api.patch(`/calendar/events/${eventId}/status`, {
+          class_status: statusValue,
+        });
+
+        console.log("✅ handleSaveEvent - Response:", response.data);
+        message.success("Event status updated successfully");
+
+        console.log("Save event request details:", {
+          eventId: eventId,
+          statusValue: statusValue,
+          endpoint: `/calendar/events/${eventId}/status`,
+          requestBody: { class_status: statusValue },
+        });
+      }
+
       setEventDetails(null);
       setIsEventDetailsOpen(false);
+      setIsEditingStatus(false); // Reset editing status
 
       // Clear events state first
+      console.log("🧹 Clearing events state...");
       setEvents([]);
       setDisplayedEvents([]);
 
+      // Wait a bit for state to clear
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       // Refresh events to show updated status
+      console.log("🔄 Refreshing events...");
       await fetchEvents();
 
       // Force FullCalendar to refresh
       if (calendarRef.current) {
+        console.log("🔄 Forcing FullCalendar refresh...");
         const calendarApi = calendarRef.current.getApi();
         calendarApi.refetchEvents();
+
+        // Also try to rerender the calendar
+        setTimeout(() => {
+          calendarApi.render();
+          console.log("🔄 Calendar re-rendered");
+        }, 200);
       }
 
       // Helper function to update displayedEvents based on current filters
+      console.log("🔄 Updating displayed events...");
       updateDisplayedEvents();
 
       // Notify other components that events have been updated
       localStorage.setItem("calendarEventsUpdated", Date.now().toString());
+
+      console.log("✅ Event update completed successfully");
+
+      // Додаткове оновлення для unavailable events
+      if (eventDetails?.isNotAvailable) {
+        console.log("🔄 Additional refresh for unavailable event...");
+        setTimeout(async () => {
+          await fetchEvents();
+          if (calendarRef.current) {
+            const calendarApi = calendarRef.current.getApi();
+            calendarApi.refetchEvents();
+          }
+        }, 500);
+      }
     } catch (error) {
-      console.error("❌ Error updating event status:", error);
+      console.error("❌ Error updating event:", error);
       message.error("Failed to update event");
     }
   };
@@ -1749,12 +1543,12 @@ const Calendar: React.FC = () => {
   };
 
   const classTypeOptions = [
-    { value: "Regular Lesson", label: "Regular Lesson" },
-    { value: "Unavailable Lesson", label: "Unavailable Lesson" },
-    { value: "Training Lesson", label: "Training Lesson" },
-    { value: "Trial Lesson", label: "Trial Lesson" },
-    { value: "Instant Lesson", label: "Instant Lesson" },
-    { value: "Group Lesson", label: "Group Lesson" },
+    { value: "Regular", label: "Regular" },
+    { value: "Unavailable", label: "Unavailable" },
+    { value: "Training", label: "Training" },
+    { value: "Trial", label: "Trial" },
+    { value: "Instant", label: "Instant" },
+    { value: "Group", label: "Group" },
   ];
 
   const durationOptions = [
@@ -1864,7 +1658,7 @@ const Calendar: React.FC = () => {
 
     const editData = {
       ...eventDetails,
-      class_type: eventDetails.class_type || "Regular-Lesson",
+      class_type: eventDetails.class_type || "Regular",
       class_status: statusValue,
       teacherId: teacherId,
     };
@@ -1908,11 +1702,6 @@ const Calendar: React.FC = () => {
         start_date: updatedData.start_date,
         end_date: updatedData.end_date,
         class_status: updatedData.class_status,
-        teacher_id: teacherId ? parseInt(teacherId) : undefined,
-        teacher_name: teacher_name,
-        // Додаємо додаткові поля для сумісності
-        teacherId: teacherId ? parseInt(teacherId) : undefined,
-        resourceId: teacherId ? parseInt(teacherId) : undefined,
       };
 
       console.log("📤 Final event data for update:", eventDataForUpdate);
@@ -2090,6 +1879,269 @@ const Calendar: React.FC = () => {
     }
   };
 
+  // Helper function to map server status values to our format
+  const mapServerStatus = (serverStatus: string): string => {
+    const statusMap: { [key: string]: string } = {
+      given: "Given",
+      student_no_show: "No show student",
+      teacher_no_show: "No show teacher",
+      cancelled: "Cancelled",
+      scheduled: "scheduled",
+      not_available: "Not Available",
+      // Direct mappings for server values
+      Given: "Given",
+      "No show student": "No show student",
+      "No show teacher": "No show teacher",
+      Cancelled: "Cancelled",
+      "Not Available": "Not Available",
+    };
+
+    return statusMap[serverStatus] || "scheduled";
+  };
+
+  const handleAvailabilityChange = (field: string, value: any) => {
+    setAvailabilityForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleAddUnavailable = async () => {
+    try {
+      if (
+        !availabilityForm.teacherId ||
+        !availabilityForm.date ||
+        !availabilityForm.startTime ||
+        !availabilityForm.endTime
+      ) {
+        message.error("Please fill in all required fields");
+        return;
+      }
+
+      const teacher = teachers.find((t) => t.id === availabilityForm.teacherId);
+      if (!teacher) {
+        message.error("Teacher not found");
+        return;
+      }
+
+      // Convert times to UTC for the API
+      const startDate = dayjs.tz(availabilityForm.date, timezone);
+      const startTime = dayjs.tz(availabilityForm.startTime, timezone);
+      const endTime = dayjs.tz(availabilityForm.endTime, timezone);
+
+      const startDateTime = startDate
+        .hour(startTime.hour())
+        .minute(startTime.minute());
+      const endDateTime = startDate
+        .hour(endTime.hour())
+        .minute(endTime.minute());
+
+      const startUTC = startDateTime.utc().format("YYYY-MM-DDTHH:mm:ss");
+      const endUTC = endDateTime.utc().format("YYYY-MM-DDTHH:mm:ss");
+
+      console.log("🔄 Adding unavailable time:", {
+        teacherId: availabilityForm.teacherId,
+        startDate: startDateTime.format("YYYY-MM-DD HH:mm:ss"),
+        endDate: endDateTime.format("YYYY-MM-DD HH:mm:ss"),
+        startUTC,
+        endUTC,
+        timezone,
+      });
+
+      const eventData = {
+        class_type: "Unavailable",
+        teacher_id: availabilityForm.teacherId,
+        class_status: "Not Available",
+        startDate: startUTC,
+        endDate: endUTC,
+      };
+
+      if (availabilityForm.repeat) {
+        // Handle repeating unavailable times
+        const slots = [];
+        for (let week = 0; week < availabilityForm.repeatWeeks; week++) {
+          for (const day of availabilityForm.repeatDays) {
+            const currentDate = startDate.add(week, "week").day(day);
+            const currentStart = currentDate
+              .hour(startTime.hour())
+              .minute(startTime.minute());
+            const currentEnd = currentDate
+              .hour(endTime.hour())
+              .minute(endTime.minute());
+
+            slots.push({
+              class_type: "Unavailable",
+              teacher_id: availabilityForm.teacherId,
+              class_status: "Not Available",
+              startDate: currentStart.utc().format("YYYY-MM-DDTHH:mm:ss"),
+              endDate: currentEnd.utc().format("YYYY-MM-DDTHH:mm:ss"),
+            });
+          }
+        }
+
+        // Create all events
+        for (const slot of slots) {
+          await api.post("/calendar/events", {
+            events: {
+              added: [slot],
+            },
+          });
+        }
+      } else {
+        // Create single event
+        await api.post("/calendar/events", {
+          events: {
+            added: [eventData],
+          },
+        });
+      }
+
+      message.success("Unavailable time added successfully");
+      setIsAvailabilityModalOpen(false);
+
+      // Reset form
+      setAvailabilityForm({
+        teacherId: null,
+        date: null,
+        repeat: false,
+        startTime: null,
+        endTime: null,
+        repeatDays: [],
+        repeatWeeks: 1,
+      });
+
+      // Refresh events
+      await fetchEvents();
+    } catch (error) {
+      console.error("Error adding unavailable time:", error);
+      message.error("Failed to add unavailable time");
+    }
+  };
+
+  const handleEventUpdate = async (info: any) => {
+    console.log("handleEventUpdate called with:", info);
+    console.log("Event details:", {
+      id: info.event.id,
+      title: info.event.title,
+      start: info.event.start,
+      end: info.event.end,
+      oldStart: info.oldEvent.start,
+      oldEnd: info.oldEvent.end,
+    });
+
+    try {
+      // Перевіряємо чи це unavailable event
+      const isUnavailable = isUnavailableEvent(info.event);
+      let updatedEvent: CustomEventInput;
+
+      if (isUnavailable) {
+        // Для unavailable events використовуємо спеціальну обробку
+        const startUTC = dayjs(info.event.start)
+          .utc()
+          .format("YYYY-MM-DDTHH:mm:ss");
+        const endUTC = dayjs(info.event.end)
+          .utc()
+          .format("YYYY-MM-DDTHH:mm:ss");
+
+        const updateData = {
+          id: info.event.id,
+          start: startUTC,
+          end: endUTC,
+          class_status:
+            info.event.extendedProps?.class_status || "Not Available",
+          class_type: info.event.extendedProps?.class_type || "Unavailable",
+          teacher_id:
+            info.event.extendedProps?.teacherId ||
+            info.event.extendedProps?.teacher_id,
+        };
+
+        console.log(
+          "🔄 Updating unavailable event via drag/resize:",
+          updateData
+        );
+
+        const response = await calendarApi.updateCalendarEvent(updateData);
+        console.log("Update response for unavailable event:", response);
+
+        message.success("Unavailable time slot updated successfully");
+
+        // Створюємо updatedEvent для unavailable events
+        updatedEvent = {
+          id: info.event.id,
+          title: info.event.title,
+          start: info.event.start,
+          end: info.event.end,
+          allDay: info.event.allDay || false,
+          teacher_name: info.event.extendedProps?.teacher_name,
+          backgroundColor: info.event.backgroundColor,
+          borderColor: info.event.borderColor,
+          textColor: info.event.textColor,
+          extendedProps: {
+            ...info.event.extendedProps,
+            teacherId: info.event.extendedProps?.teacher_id,
+            studentId: info.event.extendedProps?.student_id,
+            teacher_name: info.event.extendedProps?.teacher_name,
+            student_name_text: info.event.extendedProps?.student_name,
+          },
+        };
+      } else {
+        // Звичайна обробка для інших подій
+        updatedEvent = {
+          id: info.event.id,
+          title: info.event.title,
+          start: info.event.start,
+          end: info.event.end,
+          allDay: info.event.allDay || false,
+          teacher_name: info.event.extendedProps.teacher_name,
+          backgroundColor: info.event.backgroundColor,
+          borderColor: info.event.borderColor,
+          textColor: info.event.textColor,
+          extendedProps: {
+            ...info.event.extendedProps,
+            teacherId: info.event.extendedProps.teacher_id,
+            studentId: info.event.extendedProps.student_id,
+            teacher_name: info.event.extendedProps.teacher_name,
+            student_name_text: info.event.extendedProps.student_name,
+          },
+        };
+
+        console.log("Sending updated event:", updatedEvent);
+
+        const response = await calendarApi.updateCalendarEvent(updatedEvent);
+        console.log("Update response:", response);
+      }
+
+      // Оновлюємо локальний стан
+      setEvents((prevEvents) =>
+        prevEvents.map((event) =>
+          event.id === updatedEvent.id ? updatedEvent : event
+        )
+      );
+
+      // Оновлюємо displayedEvents
+      setDisplayedEvents((prevDisplayedEvents) =>
+        prevDisplayedEvents.map((event) =>
+          event.id === updatedEvent.id ? updatedEvent : event
+        )
+      );
+
+      // Примусово оновлюємо календар
+      if (calendarRef.current) {
+        const calendarApi = calendarRef.current.getApi();
+        calendarApi.refetchEvents();
+      }
+
+      // Викликаємо updateDisplayedEvents для правильного фільтрування
+      setTimeout(() => {
+        updateDisplayedEvents();
+      }, 100);
+
+      toast.success("Event successfully updated!");
+    } catch (error) {
+      console.error("Failed to update event:", error);
+      toast.error("Помилка при оновленні події");
+      // Відновлюємо оригінальний стан події
+      info.revert();
+    }
+  };
+
   return (
     <div className="calendar-container with-sidebar">
       <div className="calendar-sidebar">
@@ -2215,6 +2267,8 @@ const Calendar: React.FC = () => {
             select={handleDateSelect}
             eventContent={renderEventContent}
             viewDidMount={handleViewChange}
+            eventDrop={handleEventUpdate}
+            eventResize={handleEventUpdate}
             slotMinTime="00:00:00"
             slotMaxTime="24:00:00"
             allDaySlot={false}
@@ -2276,7 +2330,7 @@ const Calendar: React.FC = () => {
               <Select
                 value={eventForm.classType}
                 onChange={(v) => {
-                  if (v === "Unavailable Lesson") {
+                  if (v === "Unavailable") {
                     setIsCreateModalOpen(false);
                     setIsAvailabilityModalOpen(true);
                     return;
@@ -2284,7 +2338,7 @@ const Calendar: React.FC = () => {
                   setEventForm((prev) => ({
                     ...prev,
                     classType: v,
-                    duration: v === "Trial Lesson" ? "30 min" : prev.duration,
+                    duration: v === "Trial" ? "30 min" : prev.duration,
                   }));
                 }}
                 options={classTypeOptions}
@@ -2341,7 +2395,7 @@ const Calendar: React.FC = () => {
                   setEventForm((prev) => ({ ...prev, duration: v }))
                 }
                 options={durationOptions}
-                disabled={eventForm.classType === "Trial Lesson"}
+                disabled={eventForm.classType === "Trial"}
                 style={{ width: "100%" }}
               />
             </Form.Item>
@@ -2373,7 +2427,7 @@ const Calendar: React.FC = () => {
                 onChange={(v) => {
                   if (v) {
                     const duration =
-                      eventForm.classType === "Trial Lesson"
+                      eventForm.classType === "Trial"
                         ? 30
                         : parseInt(eventForm.duration.replace(" min", ""));
                     const end = v.add(duration, "minute");
@@ -2395,11 +2449,21 @@ const Calendar: React.FC = () => {
                       selectedValueUTC: v.utc().format("YYYY-MM-DD HH:mm:ss"),
                     });
 
-                    setEventForm((prev) => ({
-                      ...prev,
-                      start: v.format("YYYY-MM-DDTHH:mm:ss"),
-                      end: end.format("YYYY-MM-DDTHH:mm:ss"),
-                    }));
+                    setEventForm({
+                      teacherId: null,
+                      studentId: null,
+                      start: v.format("YYYY-MM-DD HH:mm:ss"),
+                      end: end.format("YYYY-MM-DD HH:mm:ss"),
+                      classType: "Regular",
+                      status: "scheduled",
+                      duration: "50 min",
+                      payment_status: "unpaid",
+                      repeating: {
+                        type: "none",
+                        days: [],
+                        weeks: 1,
+                      },
+                    });
                   }
                 }}
                 style={{ width: "100%" }}
@@ -2582,7 +2646,11 @@ const Calendar: React.FC = () => {
         <Modal
           title="Event Details"
           open={isEventDetailsOpen}
-          onCancel={() => setIsEventDetailsOpen(false)}
+          onCancel={() => {
+            setIsEventDetailsOpen(false);
+            setEventDetails(null);
+            setIsEditingStatus(false);
+          }}
           footer={null}
           width={400}
           centered
@@ -2590,78 +2658,63 @@ const Calendar: React.FC = () => {
         >
           {isEditingStatus ? (
             <Form layout="vertical">
-              <Form.Item label="Start Time">
-                <DatePicker
-                  showTime
-                  format="YYYY-MM-DD HH:mm"
-                  value={eventDetails?.start ? dayjs(eventDetails.start) : null}
-                  onChange={(v) => {
-                    if (v && eventDetails) {
-                      setEventDetails({
-                        ...eventDetails,
-                        start: v.toISOString(),
-                      });
-                    }
-                  }}
-                  style={{ width: "100%" }}
-                  disabled={eventDetails?.isNotAvailable}
-                />
-              </Form.Item>
-              <Form.Item label="End Time">
-                <DatePicker
-                  showTime
-                  format="YYYY-MM-DD HH:mm"
-                  value={eventDetails?.end ? dayjs(eventDetails.end) : null}
-                  onChange={(v) => {
-                    if (v && eventDetails) {
-                      setEventDetails({
-                        ...eventDetails,
-                        end: v.toISOString(),
-                      });
-                    }
-                  }}
-                  style={{ width: "100%" }}
-                  disabled={eventDetails?.isNotAvailable}
-                />
-              </Form.Item>
-              {/* <Form.Item label="Teacher">
-                <Select
-                  value={
-                    eventDetails?.teacherId
-                      ? String(eventDetails.teacherId)
-                      : undefined
-                  }
-                  options={teachers.map((t) => ({
-                    value: String(t.id),
-                    label: `${t.first_name} ${t.last_name}`,
-                  }))}
-                  onChange={(v) =>
-                    setEventDetails(
-                      eventDetails
-                        ? { ...eventDetails, teacherId: v }
-                        : eventDetails
-                    )
-                  }
-                  style={{ width: "100%" }}
-                  disabled={eventDetails?.isNotAvailable}
-                />
-              </Form.Item> */}
+              {eventDetails?.isNotAvailable && (
+                <>
+                  <Form.Item label="Start Time">
+                    <DatePicker
+                      showTime={{ format: "HH:mm" }}
+                      format="DD.MM.YYYY HH:mm"
+                      value={dayjs(eventDetails.start)}
+                      onChange={(date) => {
+                        if (date && eventDetails) {
+                          console.log("🕐 Updating start time:", {
+                            original: eventDetails.start,
+                            new: date.toISOString(),
+                            formatted: date.format("YYYY-MM-DDTHH:mm:ss"),
+                          });
+                          setEventDetails({
+                            ...eventDetails,
+                            start: date.format("YYYY-MM-DDTHH:mm:ss"),
+                          });
+                        }
+                      }}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                  <Form.Item label="End Time">
+                    <DatePicker
+                      showTime={{ format: "HH:mm" }}
+                      format="DD.MM.YYYY HH:mm"
+                      value={eventDetails.end ? dayjs(eventDetails.end) : null}
+                      onChange={(date) => {
+                        if (date && eventDetails) {
+                          console.log("🕐 Updating end time:", {
+                            original: eventDetails.end,
+                            new: date.toISOString(),
+                            formatted: date.format("YYYY-MM-DDTHH:mm:ss"),
+                          });
+                          setEventDetails({
+                            ...eventDetails,
+                            end: date.format("YYYY-MM-DDTHH:mm:ss"),
+                          });
+                        }
+                      }}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                </>
+              )}
               <Form.Item label="Status">
                 <Select
-                  value={eventDetails?.class_status}
-                  onChange={(v) =>
-                    setEventDetails(
-                      eventDetails
-                        ? { ...eventDetails, class_status: v }
-                        : eventDetails
-                    )
-                  }
+                  value={statusValue}
+                  onChange={(v) => setStatusValue(v)}
                   options={[
                     { value: "scheduled", label: "Scheduled" },
-                    { value: "given", label: "Given" },
-                    { value: "student_no_show", label: "Student No Show" },
-                    { value: "cancelled", label: "Cancelled" },
-                    { value: "teacher_no_show", label: "Teacher not show" },
+                    { value: "Given", label: "Given" },
+                    { value: "No show student", label: "Student No Show" },
+                    { value: "No show teacher", label: "Teacher No Show" },
+                    { value: "Cancelled", label: "Cancelled" },
+                    { value: "Not Available", label: "Not Available" },
                   ]}
                   style={{ width: "100%" }}
                   disabled={eventDetails?.isNotAvailable}
@@ -2675,73 +2728,19 @@ const Calendar: React.FC = () => {
                   alignItems: "center",
                 }}
               >
-                <Button onClick={() => setIsEditingStatus(false)}>
+                <Button
+                  onClick={() => {
+                    setIsEditingStatus(false);
+                    setStatusValue(
+                      mapServerStatus(eventDetails?.class_status || "scheduled")
+                    );
+                  }}
+                >
                   Cancel
                 </Button>
                 <Button
                   type="primary"
-                  onClick={async () => {
-                    if (!eventDetails || eventDetails.isNotAvailable) return;
-
-                    try {
-                      const startDate = dayjs(eventDetails.start)
-                        .tz(DEFAULT_DB_TIMEZONE)
-                        .format("YYYY-MM-DDTHH:mm:ss");
-                      const endDate = dayjs(eventDetails.end)
-                        .tz(DEFAULT_DB_TIMEZONE)
-                        .format("YYYY-MM-DDTHH:mm:ss");
-
-                      console.log("Updating event with data:", {
-                        id: eventDetails.id,
-                        startDate,
-                        endDate,
-                        class_status: eventDetails.class_status,
-                      });
-
-                      // Use POST /calendar/events for updating events
-                      const response = await api.post("/calendar/events", {
-                        events: {
-                          updated: [
-                            {
-                              id: eventDetails.id,
-                              startDate,
-                              endDate,
-                              class_status: eventDetails.class_status,
-                            },
-                          ],
-                        },
-                      });
-
-                      console.log("Update response:", response.data);
-
-                      setIsEditingStatus(false);
-                      setIsEventDetailsOpen(false);
-
-                      // Очищаємо стейт подій
-                      setEvents([]);
-                      setDisplayedEvents([]);
-
-                      // Оновлюємо вид календаря
-                      if (calendarRef.current) {
-                        const calendarApi = calendarRef.current.getApi();
-                        calendarApi.gotoDate(dayjs(startDate).toDate());
-
-                        // Чекаємо поки календар оновиться
-                        await new Promise((resolve) =>
-                          setTimeout(resolve, 100)
-                        );
-
-                        // Завантажуємо події заново
-                        await fetchEvents();
-                      }
-
-                      message.success("Event updated successfully");
-                    } catch (error) {
-                      console.error("Error updating event:", error);
-                      message.error("Failed to update event");
-                    }
-                  }}
-                  disabled={eventDetails?.isNotAvailable}
+                  onClick={() => handleSaveEvent(eventDetails?.id || "")}
                 >
                   Save
                 </Button>
@@ -2796,10 +2795,11 @@ const Calendar: React.FC = () => {
                     onChange={(value) => setStatusValue(value)}
                     options={[
                       { value: "scheduled", label: "Scheduled" },
-                      { value: "given", label: "Given" },
-                      { value: "student_no_show", label: "Student No Show" },
-                      { value: "teacher_no_show", label: "Teacher No Show" },
-                      { value: "cancelled", label: "Cancelled" },
+                      { value: "Given", label: "Given" },
+                      { value: "No show student", label: "Student No Show" },
+                      { value: "No show teacher", label: "Teacher No Show" },
+                      { value: "Cancelled", label: "Cancelled" },
+                      { value: "Not Available", label: "Not Available" },
                     ]}
                     style={{ width: "100%" }}
                     disabled={eventDetails?.isNotAvailable}
@@ -2857,7 +2857,6 @@ const Calendar: React.FC = () => {
                     alignItems: "center",
                     gap: 6,
                   }}
-                  disabled={eventDetails?.isNotAvailable}
                 >
                   Edit
                 </Button>

@@ -593,10 +593,10 @@ export default function ClassesPage() {
               <CustomDropdown
                 label="Class Type"
                 options={[
-                  { value: "trial", label: "Trial Lesson" },
-                  { value: "regular", label: "Regular Lesson" },
-                  { value: "instant", label: "Instant Lesson" },
-                  { value: "group", label: "Group Lesson" },
+                  { value: "trial", label: "Trial" },
+                  { value: "regular", label: "Regular" },
+                  { value: "instant", label: "Instant" },
+                  { value: "group", label: "Group" },
                 ]}
                 value={form.classType}
                 onChange={(v) => setForm({ ...form, classType: v })}
