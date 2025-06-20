@@ -808,10 +808,53 @@ const Calendar: React.FC = () => {
   // Add useEffect to initialize selected teachers
   useEffect(() => {
     if (teachers.length > 0 && selectedTeacherIds.length === 0) {
-      // If no teachers selected, select the first one by default
-      setSelectedTeacherIds([teachers[0].id]);
+      // Спробуємо завантажити збережений стан з localStorage
+      const savedTeacherIds = localStorage.getItem(
+        "calendarSelectedTeacherIds"
+      );
+      if (savedTeacherIds) {
+        try {
+          const parsedIds = JSON.parse(savedTeacherIds);
+          console.log("🎯 Loading saved teacher selection:", parsedIds);
+          setSelectedTeacherIds(parsedIds);
+        } catch (error) {
+          console.log(
+            "🎯 Failed to parse saved teacher selection, defaulting to 'All Teachers'"
+          );
+          setSelectedTeacherIds([]);
+        }
+      } else {
+        // За замовчуванням вибираємо всіх вчителів (порожній масив означає "All Teachers")
+        console.log(
+          "🎯 Initializing teachers selection - defaulting to 'All Teachers'"
+        );
+        setSelectedTeacherIds([]);
+        // Зберігаємо початковий стан в localStorage
+        localStorage.setItem("calendarSelectedTeacherIds", JSON.stringify([]));
+      }
     }
   }, [teachers]);
+
+  // Зберігаємо стан вибраних вчителів при зміні
+  useEffect(() => {
+    if (teachers.length > 0) {
+      localStorage.setItem(
+        "calendarSelectedTeacherIds",
+        JSON.stringify(selectedTeacherIds)
+      );
+      console.log("🎯 Teacher selection state saved:", selectedTeacherIds);
+    }
+  }, [selectedTeacherIds, teachers.length]);
+
+  // Очищаємо localStorage при розмонтуванні компонента
+  useEffect(() => {
+    return () => {
+      // Не очищаємо localStorage при розмонтуванні, щоб зберегти стан
+      console.log(
+        "🎯 Calendar component unmounted, teacher selection preserved"
+      );
+    };
+  }, []);
 
   // Refetch events when teachers are loaded
   useEffect(() => {
@@ -1155,9 +1198,9 @@ const Calendar: React.FC = () => {
 
   // Proper unavailable event check
   const isUnavailableEvent = (event: any) => {
-    const classType =
-      (event.extendedProps as EventExtendedProps)?.class_type || "";
-    return classType.toLowerCase() === "unavailable";
+    // Check if this is an unavailable event by class_type
+    const classType = event.extendedProps?.class_type;
+    return classType === "Unavailable" || classType === "unavailable";
   };
 
   // Update events processing to handle unavailable events
@@ -1224,7 +1267,7 @@ const Calendar: React.FC = () => {
 
     let backgroundColor;
     if (isNotAvailable) {
-      backgroundColor = "#d32f2f";
+      backgroundColor = "#d32f2f"; // Always red for unavailable events
     } else {
       switch (classType.toLowerCase()) {
         case "trial":
@@ -1244,8 +1287,8 @@ const Calendar: React.FC = () => {
       }
     }
 
-    // Adjust opacity for reserved classes
-    if (paymentStatus === "reserved") {
+    // Adjust opacity for reserved classes (but not for unavailable events)
+    if (paymentStatus === "reserved" && !isNotAvailable) {
       backgroundColor = backgroundColor + "99"; // Add 60% opacity
     }
 
@@ -1253,32 +1296,54 @@ const Calendar: React.FC = () => {
 
     return (
       <div
-        className="fc-event-main-content"
+        className={`fc-event-main-content ${
+          isNotAvailable ? "event-unavailable" : ""
+        }`}
         style={{
-          padding: "2px 4px",
+          padding: "0",
           backgroundColor,
           height: "100%",
+          width: "100%",
           minHeight: "65px",
           borderLeft: `3px solid ${backgroundColor.slice(0, 7)}`,
           display: "flex",
           flexDirection: "column",
-          justifyContent: "space-between",
+          justifyContent: "center",
+          alignItems: "flex-start", // Changed from center to flex-start for left alignment
           boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
           borderRadius: "3px",
+          position: "absolute",
+          top: "0",
+          left: "0",
+          right: "0",
+          bottom: "0",
         }}
       >
-        <div style={{ flex: 1 }}>
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: "flex-start", // Changed from center to flex-start for left alignment
+            width: "100%",
+            height: "100%",
+            padding: "4px 8px", // Added left padding for better spacing
+            textAlign: "left", // Changed from center to left
+          }}
+        >
           <div
             style={{
-              fontSize: "10px",
-              fontWeight: "500",
+              fontSize: "12px",
+              fontWeight: "600",
               color: textColor,
-              lineHeight: "1.1",
-              marginBottom: "1px",
+              lineHeight: "1.2",
+              marginBottom: "2px",
               whiteSpace: "normal",
-              overflow: "visible",
+              overflow: "hidden",
               wordBreak: "break-word",
-              opacity: 0.9,
+              opacity: 0.95,
+              width: "100%",
             }}
           >
             {isNotAvailable ? "Unavailable" : classTypeDisplay}
@@ -1287,49 +1352,34 @@ const Calendar: React.FC = () => {
             <div
               style={{
                 fontSize: "11px",
-                fontWeight: "600",
+                fontWeight: "500",
                 color: textColor,
                 lineHeight: "1.1",
-                marginBottom: "1px",
+                marginBottom: "2px",
                 whiteSpace: "normal",
-                overflow: "visible",
+                overflow: "hidden",
                 wordBreak: "break-word",
+                width: "100%",
               }}
             >
               {displayTitle}
             </div>
           )}
-          {!isNotAvailable && teacherName && (
-            <div
-              style={{
-                fontSize: "10px",
-                fontWeight: "500",
-                color: textColor,
-                lineHeight: "1.1",
-                marginBottom: "1px",
-                whiteSpace: "normal",
-                overflow: "visible",
-                wordBreak: "break-word",
-                opacity: 0.9,
-              }}
-            >
-              {teacherName}
-            </div>
-          )}
-        </div>
-        <div
-          style={{
-            fontSize: "10px",
-            fontWeight: "500",
-            color: textColor,
-            lineHeight: "1.1",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            opacity: 0.8,
-          }}
-        >
-          {startTime} - {endTime}
+          <div
+            style={{
+              fontSize: "9px",
+              fontWeight: "500",
+              color: textColor,
+              lineHeight: "1.1",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              opacity: 0.8,
+              width: "100%",
+            }}
+          >
+            {startTime} - {endTime}
+          </div>
         </div>
       </div>
     );
@@ -2163,11 +2213,23 @@ const Calendar: React.FC = () => {
                   selectedTeacherIds.includes(teacher.id) ? " selected" : ""
                 }`}
                 onClick={() => {
-                  setSelectedTeacherIds((prev) =>
-                    prev.includes(teacher.id)
+                  setSelectedTeacherIds((prev) => {
+                    const newSelection = prev.includes(teacher.id)
                       ? prev.filter((id) => id !== teacher.id)
-                      : [...prev, teacher.id]
-                  );
+                      : [...prev, teacher.id];
+
+                    // Зберігаємо вибір в localStorage
+                    localStorage.setItem(
+                      "calendarSelectedTeacherIds",
+                      JSON.stringify(newSelection)
+                    );
+                    console.log(
+                      "🎯 Teacher selection updated and saved:",
+                      newSelection
+                    );
+
+                    return newSelection;
+                  });
                 }}
                 style={{
                   cursor: "pointer",
@@ -2194,7 +2256,15 @@ const Calendar: React.FC = () => {
               className={`teacher-item${
                 selectedTeacherIds.length === 0 ? " selected" : ""
               }`}
-              onClick={() => setSelectedTeacherIds([])}
+              onClick={() => {
+                setSelectedTeacherIds([]);
+                // Зберігаємо вибір "All Teachers" в localStorage
+                localStorage.setItem(
+                  "calendarSelectedTeacherIds",
+                  JSON.stringify([])
+                );
+                console.log("🎯 All Teachers selected and saved");
+              }}
               style={{ cursor: "pointer", marginTop: 12, fontWeight: 600 }}
             >
               <input

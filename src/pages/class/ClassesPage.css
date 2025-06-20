@@ -275,3 +275,125 @@
 .ant-select-arrow svg {
   fill: #e5e7eb !important;
 }
+
+/* Нові стилі для фільтрів */
+.custom-filter-dropdown {
+  background: #fff !important;
+  border-radius: 6px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+  padding: 4px !important;
+  color: #000 !important;
+}
+
+.custom-filter-dropdown .filter-list {
+  max-height: 250px !important;
+  overflow-y: auto !important;
+  padding: 4px 0 !important;
+  color: #000 !important;
+}
+
+.custom-filter-dropdown .ant-checkbox-wrapper {
+  display: flex !important;
+  width: 100% !important;
+  padding: 8px 12px !important;
+  margin: 0 !important;
+  border-radius: 4px !important;
+  transition: background-color 0.2s ease-in-out !important;
+  color: #000 !important;
+}
+
+.custom-filter-dropdown .ant-checkbox-wrapper:hover {
+  background-color: #f0f5ff !important; /* Світло-блакитний фон при наведенні */
+}
+
+.custom-filter-dropdown .ant-checkbox-wrapper span:last-child {
+  color: #000 !important; /* Чорний текст для пунктів */
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+}
+
+/* Додаткові стилі для забезпечення чорного тексту */
+.custom-filter-dropdown .ant-checkbox-wrapper span {
+  color: #000 !important;
+}
+
+/* Стиль для обраного елемента */
+.custom-filter-dropdown .ant-checkbox-wrapper-checked {
+  background-color: #e6f7ff !important; /* Фон для обраного елемента */
+  font-weight: 500 !important;
+}
+
+.custom-filter-dropdown
+  .ant-checkbox-wrapper-checked
+  .ant-checkbox-checked
+  .ant-checkbox-inner {
+  background-color: #1890ff !important;
+  border-color: #1890ff !important;
+}
+
+.custom-filter-dropdown .filter-footer {
+  padding: 8px 12px !important;
+  border-top: 1px solid #f0f0f0 !important;
+  color: #000 !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+.custom-filter-dropdown .reset-filter-btn {
+  padding: 0 !important;
+  text-align: left !important;
+  font-size: 14px !important;
+  color: #999 !important; /* Сірий колір за замовчуванням */
+  border: none !important;
+  background: none !important;
+}
+
+.custom-filter-dropdown .apply-filter-btn {
+  padding: 0 !important;
+  text-align: right !important;
+  font-size: 14px !important;
+  color: #999 !important; /* Сірий колір за замовчуванням */
+  border: none !important;
+  background: none !important;
+}
+
+/* Синій колір для кнопки Reset тільки коли є вибрані елементи */
+.custom-filter-dropdown .reset-filter-btn.ant-btn-link {
+  color: #1890ff !important;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  transition: background 0.15s, color 0.15s;
+  cursor: pointer;
+  padding: 0;
+}
+
+.action-btn .icon-svg {
+  width: 20px;
+  height: 20px;
+  color: #64748b;
+  transition: color 0.15s;
+}
+
+.action-btn.edit-btn:hover {
+  background: #e0f2fe;
+}
+.action-btn.edit-btn:hover .icon-svg {
+  color: #2563eb;
+}
+
+.action-btn.delete-btn:hover {
+  background: #fee2e2;
+}
+.action-btn.delete-btn:hover .icon-svg {
+  color: #ef4444;
+}

@@ -1,0 +1,229 @@
+/* Dark theme styles for AddEditClassModal */
+.ant-modal-content {
+  background-color: #1f2937 !important;
+  color: #ffffff !important;
+}
+
+.ant-modal-header {
+  background-color: #1f2937 !important;
+  border-bottom: 1px solid #374151 !important;
+}
+
+.ant-modal-title {
+  color: #ffffff !important;
+}
+
+.ant-modal-close {
+  color: #ffffff !important;
+}
+
+.ant-modal-close:hover {
+  color: #9ca3af !important;
+}
+
+.ant-modal-body {
+  background-color: #1f2937 !important;
+  color: #ffffff !important;
+}
+
+.ant-modal-footer {
+  background-color: #1f2937 !important;
+  border-top: 1px solid #374151 !important;
+}
+
+.ant-form-item-label > label {
+  color: #ffffff !important;
+}
+
+.ant-select-selector {
+  background-color: #374151 !important;
+  border-color: #4b5563 !important;
+  color: #ffffff !important;
+}
+
+.ant-select-selector:hover {
+  border-color: #6b7280 !important;
+}
+
+.ant-select-focused .ant-select-selector {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+}
+
+.ant-select-dropdown {
+  background-color: #374151 !important;
+  border-color: #4b5563 !important;
+}
+
+.ant-select-item {
+  color: #ffffff !important;
+}
+
+.ant-select-item:hover {
+  background-color: #4b5563 !important;
+}
+
+.ant-select-item-option-selected {
+  background-color: #3b82f6 !important;
+}
+
+/* Select arrow icon */
+.ant-select-arrow {
+  color: #ffffff !important;
+}
+
+.ant-select-arrow svg {
+  fill: #ffffff !important;
+}
+
+.ant-select:hover .ant-select-arrow {
+  color: #3b82f6 !important;
+}
+
+.ant-select:hover .ant-select-arrow svg {
+  fill: #3b82f6 !important;
+}
+
+/* Select clear button */
+.ant-select-clear {
+  color: #9ca3af !important;
+  background-color: #374151 !important;
+}
+
+.ant-select-clear:hover {
+  color: #ffffff !important;
+  background-color: #4b5563 !important;
+}
+
+.ant-picker {
+  background-color: #374151 !important;
+  border-color: #4b5563 !important;
+}
+
+.ant-picker:hover {
+  border-color: #6b7280 !important;
+}
+
+.ant-picker-focused {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+}
+
+.ant-picker-input > input {
+  background-color: #374151 !important;
+  color: #ffffff !important;
+}
+
+.ant-picker-input > input::placeholder {
+  color: #9ca3af !important;
+}
+
+/* Calendar icon visibility */
+.ant-picker-suffix {
+  color: #ffffff !important;
+}
+
+.ant-picker-suffix svg {
+  fill: #ffffff !important;
+}
+
+.ant-picker-suffix:hover {
+  color: #3b82f6 !important;
+}
+
+.ant-picker-suffix:hover svg {
+  fill: #3b82f6 !important;
+}
+
+/* Clear button visibility */
+.ant-picker-clear {
+  color: #9ca3af !important;
+  background-color: #374151 !important;
+}
+
+.ant-picker-clear:hover {
+  color: #ffffff !important;
+  background-color: #4b5563 !important;
+}
+
+.ant-picker-dropdown {
+  background-color: #374151 !important;
+  border-color: #4b5563 !important;
+}
+
+.ant-picker-panel {
+  background-color: #374151 !important;
+}
+
+.ant-picker-header {
+  border-bottom: 1px solid #4b5563 !important;
+}
+
+.ant-picker-header button {
+  color: #ffffff !important;
+}
+
+.ant-picker-header button:hover {
+  color: #3b82f6 !important;
+}
+
+.ant-picker-content th,
+.ant-picker-content td {
+  color: #ffffff !important;
+}
+
+.ant-picker-cell:hover .ant-picker-cell-inner {
+  background-color: #4b5563 !important;
+}
+
+.ant-picker-cell-selected .ant-picker-cell-inner {
+  background-color: #3b82f6 !important;
+}
+
+.ant-btn {
+  border-color: #4b5563 !important;
+}
+
+.ant-btn-default {
+  background-color: #374151 !important;
+  color: #ffffff !important;
+}
+
+.ant-btn-default:hover {
+  background-color: #4b5563 !important;
+  border-color: #6b7280 !important;
+  color: #ffffff !important;
+}
+
+.ant-btn-primary {
+  background-color: #3b82f6 !important;
+  border-color: #3b82f6 !important;
+}
+
+/* DatePicker navigation arrows */
+.ant-picker-header-view button {
+  color: #ffffff !important;
+}
+
+.ant-picker-header-view button:hover {
+  color: #3b82f6 !important;
+}
+
+.ant-picker-header-view button:disabled {
+  color: #6b7280 !important;
+}
+
+/* Today button */
+.ant-picker-today-btn {
+  color: #3b82f6 !important;
+}
+
+.ant-picker-today-btn:hover {
+  color: #2563eb !important;
+}
+
+/* Year/Month selectors */
+.ant-picker-header-view .ant-picker-year-panel,
+.ant-picker-header-view .ant-picker-month-panel {
+  color: #ffffff !important;
+} 

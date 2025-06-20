@@ -466,7 +466,7 @@ export default function TeachersPage() {
 
       {deleteId && (
         <div className="modal-overlay">
-          <div className="modal">
+          <div className="modal confirm-delete">
             <h2>Confirm Delete</h2>
             <p>Are you sure you want to delete this teacher?</p>
             <div className="modal-actions">

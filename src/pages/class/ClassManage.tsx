@@ -265,57 +265,47 @@ const ClassManage: React.FC = () => {
       !classDate ||
       !selectedStudent ||
       !selectedTeacher ||
-      !selectedClassType
+      !selectedClassType ||
+      !startTime ||
+      !endTime
     ) {
-      toast.error("All fields are required.", { theme: "dark" });
+      toast.error("Please fill all required fields.", { theme: "dark" });
       return;
     }
-
-    // Check if trying to create Training class without permission
-    const selectedType = classTypes.find(
-      (ct) => ct.id === parseInt(selectedClassType)
-    );
-    if (selectedType?.name === "Training" && !hasTrainingAccess()) {
-      toast.error("You don't have permission to create Training classes.", {
-        theme: "dark",
-      });
-      return;
-    }
+    setLoading(true);
 
     try {
-      // Prepare lesson data with time information
+      const startDateTime = convertTimeToDbTimezone(
+        `${classDate} ${startTime}`,
+        timezone
+      );
+      const endDateTime = convertTimeToDbTimezone(
+        `${classDate} ${endTime}`,
+        timezone
+      );
+
       const lessonData = {
-        class_date: classDate,
+        lesson_date: classDate,
+        start_time: startTime,
+        end_time: endTime,
         student_id: selectedStudent,
         teacher_id: selectedTeacher,
         class_type_id: selectedClassType,
         pay_state: payState,
-        class_status: classStatus || null,
+        start_date: startDateTime,
+        end_date: endDateTime,
+        class_status: "Scheduled", // Default status
       };
 
-      // Add time information
-      const lessonWithTime = prepareTimeData(lessonData, startTime, endTime);
+      await api.post("/lessons", lessonData);
 
-      console.log("Sending lesson data:", lessonWithTime);
-      const res = await api.post("/lessons", lessonWithTime);
-
-      setLessons([...res.data.lessons]);
-
-      // Reset form
-      setClassDate("");
-      setSelectedStudent("");
-      setSelectedTeacher("");
-      setSelectedClassType("");
-      setPayState(false);
-      setClassStatus("");
-      setStartTime("");
-      setEndTime("");
+      toast.success("Lesson created successfully!", { theme: "colored" });
       setOpenModal(false);
-
-      toast.success("Lesson added successfully!", { theme: "dark" });
+      fetchClasses(); // Refresh the list
     } catch (error: any) {
-      console.error("Error creating lesson:", error);
       handleApiError(error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -344,107 +334,88 @@ const ClassManage: React.FC = () => {
   };
 
   const openEditLesson = (lesson: Lesson) => {
-    // Check if trying to edit Training class without permission
-    if (lesson.class_type.name === "Training" && !hasTrainingAccess()) {
-      toast.error("You don't have permission to edit Training classes.", {
-        theme: "dark",
-      });
-      return;
-    }
-
-    setSelectedLesson(lesson);
-    setClassDate(lesson.lesson_date);
-    setSelectedStudent(lesson.Student.id.toString());
-    setSelectedTeacher(lesson.Teacher.id.toString());
-    setSelectedClassType(lesson.class_type.id.toString());
-    setPayState(lesson.pay_state);
-    setClassStatus(lesson.class_status || "");
-
+    console.log("Opening edit modal for lesson:", lesson);
     try {
-      // Get start time and convert from DB timezone to user timezone
+      setSelectedLesson(lesson);
+      const lessonDate = dayjs(lesson.lesson_date).format("YYYY-MM-DD");
+      setClassDate(lessonDate);
+
+      // Manually handle timezone conversion to be safe
       if (lesson.start_time) {
-        const userTimeString = convertTimeToUserTimezone(
-          lesson.start_time,
-          timezone
+        const dbDateTime = dayjs.tz(
+          `${lesson.lesson_date}T${lesson.start_time}`,
+          DEFAULT_DB_TIMEZONE
         );
-        if (userTimeString) {
-          // Format as HH:MM for the time input field
-          const timePart = userTimeString.substring(0, 5);
-          setStartTime(timePart);
-        } else {
-          setStartTime("");
-        }
+        const userDateTime = dbDateTime.tz(timezone);
+        setStartTime(userDateTime.format("HH:mm"));
       } else {
         setStartTime("");
       }
 
-      // Get end time and convert from DB timezone to user timezone
       if (lesson.end_time) {
-        const userTimeString = convertTimeToUserTimezone(
-          lesson.end_time,
-          timezone
+        const dbDateTime = dayjs.tz(
+          `${lesson.lesson_date}T${lesson.end_time}`,
+          DEFAULT_DB_TIMEZONE
         );
-        if (userTimeString) {
-          // Format as HH:MM for the time input field
-          const timePart = userTimeString.substring(0, 5);
-          setEndTime(timePart);
-        } else {
-          setEndTime("");
-        }
+        const userDateTime = dbDateTime.tz(timezone);
+        setEndTime(userDateTime.format("HH:mm"));
       } else {
         setEndTime("");
       }
-    } catch (error) {
-      console.error("Error setting time values:", error);
-      // Set default values in case of error
-      setStartTime("");
-      setEndTime("");
-    }
 
-    setOpenEditModal(true);
+      setSelectedStudent(String(lesson.Student.id));
+      setSelectedTeacher(String(lesson.Teacher.id));
+      setSelectedClassType(String(lesson.class_type.id));
+      setClassStatus(lesson.class_status || "");
+      setPayState(lesson.pay_state || false);
+
+      console.log("State updated, opening modal.");
+      setOpenEditModal(true);
+    } catch (error) {
+      console.error("Error in openEditLesson:", error);
+      toast.error("Could not open the edit modal due to an error.", {
+        theme: "dark",
+      });
+    }
   };
 
   const updateLesson = async () => {
     if (!selectedLesson) return;
 
-    // Check if trying to update to Training class without permission
-    const selectedType = classTypes.find(
-      (ct) => ct.id === parseInt(selectedClassType)
-    );
-    if (selectedType?.name === "Training" && !hasTrainingAccess()) {
-      toast.error("You don't have permission to update to Training classes.", {
-        theme: "dark",
-      });
-      return;
-    }
-
     try {
-      // Prepare lesson data with time information
-      const lessonData = {
-        class_date: classDate,
+      // Create date objects in user's timezone
+      const startDateTimeUser = dayjs.tz(`${classDate}T${startTime}`, timezone);
+      const endDateTimeUser = dayjs.tz(`${classDate}T${endTime}`, timezone);
+
+      // Convert to DB timezone for sending to backend
+      const startDateTimeDb = startDateTimeUser
+        .tz(DEFAULT_DB_TIMEZONE)
+        .format("HH:mm:ss");
+      const endDateTimeDb = endDateTimeUser
+        .tz(DEFAULT_DB_TIMEZONE)
+        .format("HH:mm:ss");
+      const lessonDateDb = startDateTimeUser
+        .tz(DEFAULT_DB_TIMEZONE)
+        .format("YYYY-MM-DD");
+
+      const lessonData: any = {
+        lesson_date: lessonDateDb,
+        start_time: startDateTimeDb,
+        end_time: endDateTimeDb,
         student_id: selectedStudent,
         teacher_id: selectedTeacher,
         class_type_id: selectedClassType,
         pay_state: payState,
-        class_status: classStatus || null,
       };
+      if (classStatus) {
+        lessonData.class_status = classStatus;
+      }
 
-      // Add time information
-      const lessonWithTime = prepareTimeData(lessonData, startTime, endTime);
-
-      console.log("Updating lesson with data:", lessonWithTime);
-      const res = await api.put(
-        `/lessons/${selectedLesson.id}`,
-        lessonWithTime
-      );
-
-      setLessons([...res.data.lessons]);
-
+      await api.put(`/lessons/${selectedLesson.id}`, lessonData);
+      toast.success("Lesson updated successfully!", { theme: "colored" });
       setOpenEditModal(false);
-      setSelectedLesson(null);
-      toast.success("Lesson updated successfully!", { theme: "dark" });
+      fetchClasses();
     } catch (error: any) {
-      console.error("Error updating lesson:", error);
       handleApiError(error);
     }
   };
@@ -557,84 +528,78 @@ const ClassManage: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  // Bu fonksiyon API'ye gönderilecek veriyi hazırlar
-  const prepareTimeData = (
-    lessonData: any,
-    startTimeValue: string,
-    endTimeValue: string
-  ) => {
-    // Convert times to database timezone (PST)
-    const startTimeDb = startTimeValue
-      ? convertTimeToDbTimezone(startTimeValue, timezone)
-      : null;
-
-    const endTimeDb = endTimeValue
-      ? convertTimeToDbTimezone(endTimeValue, timezone)
-      : null;
-
-    // Check if we need to adjust the date due to timezone differences
-    let classDateStr = lessonData.class_date;
-    if (startTimeValue) {
-      const dayShift = getDayShift(
-        startTimeValue,
-        timezone,
-        DEFAULT_DB_TIMEZONE
-      );
-      if (dayShift !== 0) {
-        // Adjust the date by the number of days shifted
-        classDateStr = dayjs(lessonData.class_date)
-          .add(dayShift, "day")
-          .format("DD-MM-YYYY");
-      }
-    }
-
-    return {
-      ...lessonData,
-      class_date: classDateStr,
-      start_time: startTimeDb,
-      end_time: endTimeDb,
-    };
-  };
-
-  const columns: TableColumnsType<any> = [
+  const columns: TableColumnsType<Lesson> = [
     {
       title: "Date",
       dataIndex: "lesson_date",
       key: "lesson_date",
-      width: "25%",
-      sorter: (a, b) =>
-        moment(a.lesson_date).unix() - moment(b.lesson_date).unix(),
-      render: (text, record) => (
-        <span>
-          {moment(record.lesson_date).format("DD.MM.YYYY")}{" "}
-          {moment(record.start_time, "HH:mm:ss").format("HH:mm")}
-        </span>
-      ),
+      render: (text) => dayjs(text).format("YYYY-MM-DD"),
     },
     {
       title: "Student",
-      dataIndex: "student_name",
-      key: "student_name",
-      width: "25%",
-      sorter: (a, b) => a.student_name.localeCompare(b.student_name),
+      key: "student",
+      render: (_, record) =>
+        `${record.Student.first_name} ${record.Student.last_name}`,
     },
     {
       title: "Teacher",
-      dataIndex: "teacher_name",
-      key: "teacher_name",
-      width: "25%",
-      sorter: (a, b) => a.teacher_name.localeCompare(b.teacher_name),
+      key: "teacher",
+      render: (_, record) =>
+        `${record.Teacher.first_name} ${record.Teacher.last_name}`,
+    },
+    {
+      title: "Start Time",
+      dataIndex: "start_time",
+      key: "start_time",
+      render: (text, record) => {
+        const userTime = convertTimeToUserTimezone(
+          `${record.lesson_date}T${record.start_time}`,
+          timezone
+        );
+        return userTime ? dayjs(userTime, "HH:mm:ss").format("HH:mm") : "-";
+      },
+    },
+    {
+      title: "End Time",
+      dataIndex: "end_time",
+      key: "end_time",
+      render: (text, record) => {
+        const userTime = convertTimeToUserTimezone(
+          `${record.lesson_date}T${record.end_time}`,
+          timezone
+        );
+        return userTime ? dayjs(userTime, "HH:mm:ss").format("HH:mm") : "-";
+      },
+    },
+    {
+      title: "Class Type",
+      dataIndex: ["class_type", "name"],
+      key: "class_type",
     },
     {
       title: "Status",
       dataIndex: "class_status",
       key: "class_status",
-      width: "25%",
-      sorter: (a, b) => a.class_status.localeCompare(b.class_status),
-      render: (text) => (
-        <span className={getStatusColor(text)}>
-          {text.charAt(0).toUpperCase() + text.slice(1).replace(/_/g, " ")}
-        </span>
+      render: (status) => (
+        <span className={getStatusColor(status || "")}>{status}</span>
+      ),
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      render: (_, record) => (
+        <Space size="middle">
+          <AntButton
+            icon={<EditOutlined />}
+            onClick={() => openEditLesson(record)}
+            disabled={!permissions.update}
+          />
+          <AntButton
+            icon={<DeleteOutlined />}
+            onClick={() => deleteLesson(record.id)}
+            disabled={!permissions.delete}
+          />
+        </Space>
       ),
     },
   ];
@@ -669,8 +634,8 @@ const ClassManage: React.FC = () => {
     userId: auth.user?.id,
   });
 
-  if (loading_1) {
-    return <LoadingSpinner></LoadingSpinner>;
+  if (loading || loading_1) {
+    return <LoadingSpinner />;
   }
   const cardStyles = {
     header: {
@@ -770,7 +735,7 @@ const ClassManage: React.FC = () => {
           ) : (
             <Table
               style={{ width: "100%" }}
-              columns={columns}
+              columns={columns as any}
               dataSource={tableData}
               loading={loading}
               rowKey="id"
@@ -949,165 +914,117 @@ const ClassManage: React.FC = () => {
       )}
 
       {/* Edit Class Modal */}
-      {permissions.update && (
-        <Modal
-          show={openEditModal}
-          size="md"
-          onClose={() => setOpenEditModal(false)}
-          popup
-          className="responsive-modal"
-        >
-          <Modal.Header className="border-b border-gray-200 dark:border-gray-700" />
-          <Modal.Body>
-            <div className="space-y-4">
-              <h3 className="text-xl font-medium text-gray-900 dark:text-white">
-                Edit Class
-              </h3>
+      <Modal show={openEditModal} onClose={() => setOpenEditModal(false)} popup>
+        <Modal.Header>Edit Class</Modal.Header>
+        <Modal.Body>
+          <div className="space-y-6">
+            <div>
+              <Label htmlFor="class-date" value="Class Date" />
+              <TextInput
+                id="class-date"
+                type="date"
+                value={classDate}
+                onChange={(e) => setClassDate(e.target.value)}
+                required
+              />
+            </div>
 
-              <div>
-                <Label htmlFor="edit_class_date" value="Class Date" />
-                <TextInput
-                  id="edit_class_date"
-                  type="date"
-                  required
-                  value={classDate}
-                  onChange={(e) => setClassDate(e.target.value)}
-                  className="w-full rounded-lg"
-                />
-              </div>
+            <div>
+              <Label htmlFor="start-time" value="Start Time" />
+              <TextInput
+                id="start-time"
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                required
+              />
+            </div>
 
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="edit_start_time" value="Start Time" />
-                  <TextInput
-                    id="edit_start_time"
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full rounded-lg"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="edit_end_time" value="End Time" />
-                  <TextInput
-                    id="edit_end_time"
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                    className="w-full rounded-lg"
-                  />
-                </div>
-              </div>
+            <div>
+              <Label htmlFor="end-time" value="End Time" />
+              <TextInput
+                id="end-time"
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                required
+              />
+            </div>
 
-              <div>
-                <Label htmlFor="edit_student" value="Student" />
-                <Select
-                  id="edit_student"
-                  required
-                  value={selectedStudent}
-                  onChange={(e) => setSelectedStudent(e.target.value)}
-                  className="w-full rounded-lg"
-                >
-                  <option value="">Select Student</option>
-                  {students
-                    ?.sort((a, b) =>
-                      `${a.first_name} ${a.last_name}`.localeCompare(
-                        `${b.first_name} ${b.last_name}`
-                      )
-                    )
-                    .map((student) => (
-                      <option key={student.id} value={student.id}>
-                        {student.first_name} {student.last_name}
-                      </option>
-                    ))}
-                </Select>
-              </div>
+            <div>
+              <Label htmlFor="student" value="Student" />
+              <Select
+                id="student"
+                value={selectedStudent}
+                onChange={(e) => setSelectedStudent(e.target.value)}
+                required
+              >
+                {students.map((student) => (
+                  <option key={student.id} value={student.id}>
+                    {student.first_name} {student.last_name}
+                  </option>
+                ))}
+              </Select>
+            </div>
 
-              <div>
-                <Label htmlFor="edit_teacher" value="Teacher" />
-                <Select
-                  id="edit_teacher"
-                  required
-                  value={selectedTeacher}
-                  onChange={(e) => setSelectedTeacher(e.target.value)}
-                  className="w-full rounded-lg"
-                >
-                  <option value="">Select Teacher</option>
-                  {teachers
-                    .sort((a, b) =>
-                      `${a.first_name} ${a.last_name}`.localeCompare(
-                        `${b.first_name} ${b.last_name}`
-                      )
-                    )
-                    .map((teacher) => (
-                      <option key={teacher.id} value={teacher.id}>
-                        {teacher.first_name} {teacher.last_name}
-                      </option>
-                    ))}
-                </Select>
-              </div>
+            <div>
+              <Label htmlFor="teacher" value="Teacher" />
+              <Select
+                id="teacher"
+                value={selectedTeacher}
+                onChange={(e) => setSelectedTeacher(e.target.value)}
+                required
+              >
+                {teachers.map((teacher) => (
+                  <option key={teacher.id} value={teacher.id}>
+                    {teacher.first_name} {teacher.last_name}
+                  </option>
+                ))}
+              </Select>
+            </div>
 
-              <div>
-                <Label htmlFor="edit_classType" value="Class Type" />
-                <Select
-                  id="edit_classType"
-                  required
-                  value={selectedClassType}
-                  onChange={(e) => setSelectedClassType(e.target.value)}
-                  className="w-full rounded-lg"
-                >
-                  <option value="">Select Class Type</option>
-                  {classTypes
-                    .filter((classType) =>
-                      VALID_CLASS_TYPE_IDS.includes(classType.id)
-                    )
-                    .map((classType) => (
-                      <option key={classType.id} value={classType.id}>
-                        {classType.name}
-                      </option>
-                    ))}
-                </Select>
-              </div>
-
-              <div>
-                <Label
-                  htmlFor="edit_class_status"
-                  value="Class Status (Optional)"
-                />
-                <Select
-                  id="edit_class_status"
-                  value={classStatus}
-                  onChange={(e) => setClassStatus(e.target.value)}
-                  className="w-full rounded-lg"
-                >
-                  {filteredClassStatusOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
+            <div>
+              <Label htmlFor="class-type" value="Class Type" />
+              <Select
+                id="class-type"
+                value={selectedClassType}
+                onChange={(e) => setSelectedClassType(e.target.value)}
+                required
+              >
+                {classTypes
+                  .filter((type) => VALID_CLASS_TYPE_IDS.includes(type.id))
+                  .map((type) => (
+                    <option key={type.id} value={type.id}>
+                      {type.name}
                     </option>
                   ))}
-                </Select>
-              </div>
-
-              <div className="flex flex-col gap-2 pt-4 xs:flex-row">
-                <Button
-                  className="w-full xs:w-auto"
-                  gradientDuoTone="purpleToBlue"
-                  onClick={updateLesson}
-                >
-                  Update Class
-                </Button>
-                <Button
-                  className="w-full xs:w-auto"
-                  color="gray"
-                  onClick={() => setOpenEditModal(false)}
-                >
-                  Cancel
-                </Button>
-              </div>
+              </Select>
             </div>
-          </Modal.Body>
-        </Modal>
-      )}
+
+            <div>
+              <Label htmlFor="class-status" value="Class Status (Optional)" />
+              <Select
+                id="class-status"
+                value={classStatus}
+                onChange={(e) => setClassStatus(e.target.value)}
+              >
+                {filteredClassStatusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div className="flex justify-end gap-4">
+              <Button onClick={updateLesson}>Update Class</Button>
+              <Button color="gray" onClick={() => setOpenEditModal(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </Modal.Body>
+      </Modal>
     </motion.div>
   );
 };

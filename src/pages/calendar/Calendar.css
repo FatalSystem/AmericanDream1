@@ -27,7 +27,7 @@
   padding: 20px;
 }
 
-/* Основні стилі календаря */
+/* ÐžÑÐ½Ð¾Ð²Ð½Ñ– ÑÑ‚Ð¸Ð»Ñ– ÐºÐ°Ð»ÐµÐ½Ð´Ð°Ñ€Ñ */
 .fc {
   background: #1a1f2e;
   height: 100%;
@@ -35,7 +35,7 @@
   color: #e5e7eb;
 }
 
-/* Стилі для подій */
+/* Ð¡Ñ‚Ð¸Ð»Ñ– Ð´Ð»Ñ Ð¿Ð¾Ð´Ñ–Ð¹ */
 .fc-event {
   min-height: 60px !important;
   border-radius: 6px !important;
@@ -90,7 +90,7 @@
   border-left: 3px solid #d32f2f !important;
 }
 
-/* Стилі для часової сітки */
+/* Ð¡Ñ‚Ð¸Ð»Ñ– Ð´Ð»Ñ Ñ‡Ð°ÑÐ¾Ð²Ð¾Ñ— ÑÑ–Ñ‚ÐºÐ¸ */
 .fc-timegrid-slots td {
   height: 40px !important;
   border-color: rgba(255, 255, 255, 0.1) !important;
@@ -101,7 +101,7 @@
   font-size: 12px !important;
 }
 
-/* Стилі для заголовків */
+/* Ð¡Ñ‚Ð¸Ð»Ñ– Ð´Ð»Ñ Ð·Ð°Ð³Ð¾Ð»Ð¾Ð²ÐºÑ–Ð² */
 .fc-toolbar-title {
   color: #fff !important;
   font-size: 20px !important;
@@ -114,7 +114,7 @@
   padding: 8px !important;
 }
 
-/* Стилі для кнопок */
+/* Ð¡Ñ‚Ð¸Ð»Ñ– Ð´Ð»Ñ ÐºÐ½Ð¾Ð¿Ð¾Ðº */
 .fc-button {
   background: #2563eb !important;
   border: none !important;
@@ -131,7 +131,7 @@
   background: #1e40af !important;
 }
 
-/* Прибираємо зайві бордери */
+/* ÐŸÑ€Ð¸Ð±Ð¸Ñ€Ð°Ñ”Ð¼Ð¾ Ð·Ð°Ð¹Ð²Ñ– Ð±Ð¾Ñ€Ð´ÐµÑ€Ð¸ */
 .fc-scrollgrid {
   border: none !important;
 }
@@ -145,18 +145,18 @@
   border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
-/* Стилі для сьогоднішнього дня */
+/* Ð¡Ñ‚Ð¸Ð»Ñ– Ð´Ð»Ñ ÑÑŒÐ¾Ð³Ð¾Ð´Ð½Ñ–ÑˆÐ½ÑŒÐ¾Ð³Ð¾ Ð´Ð½Ñ */
 .fc .fc-day-today {
   background: rgba(37, 99, 235, 0.1) !important;
 }
 
-/* Стилі для подій в тижневому та денному режимі */
+/* Ð¡Ñ‚Ð¸Ð»Ñ– Ð´Ð»Ñ Ð¿Ð¾Ð´Ñ–Ð¹ Ð² Ñ‚Ð¸Ð¶Ð½ÐµÐ²Ð¾Ð¼Ñƒ Ñ‚Ð° Ð´ÐµÐ½Ð½Ð¾Ð¼Ñƒ Ñ€ÐµÐ¶Ð¸Ð¼Ñ– */
 .fc-timegrid-event {
   min-height: 30px !important;
   margin: 1px 0 !important;
 }
 
-/* Прибираємо фон для подій */
+/* ÐŸÑ€Ð¸Ð±Ð¸Ñ€Ð°Ñ”Ð¼Ð¾ Ñ„Ð¾Ð½ Ð´Ð»Ñ Ð¿Ð¾Ð´Ñ–Ð¹ */
 .fc-v-event {
   background: none !important;
   border: none !important;
@@ -692,22 +692,22 @@
 
 /* Status icons */
 .status-given::before {
-  content: "✓";
+  content: "âœ“";
   margin-right: 4px;
 }
 
 .status-cancelled::before {
-  content: "❌";
+  content: "âŒ";
   margin-right: 4px;
 }
 
 .status-student-no-show::before {
-  content: "🚫";
+  content: "ðŸš«";
   margin-right: 4px;
 }
 
 .status-teacher-no-show::before {
-  content: "⚠️";
+  content: "âš ï¸";
   margin-right: 4px;
 }
 
@@ -717,4 +717,8 @@
   word-break: break-word !important;
   line-height: 1.2 !important;
   padding: 2px 0 !important;
+}
+
+.calendar-wrapper .fc-v-event {
+  padding: 0!important;
 }

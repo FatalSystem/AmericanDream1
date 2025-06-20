@@ -15,6 +15,11 @@ export const calendarApi = {
     
     console.log("createCalendar - original eventData:", eventData);
     console.log("createCalendar - processed data:", data);
+    console.log("createCalendar - final request payload:", {
+      events: {
+        added: [data],
+      },
+    });
     
     try {
       const response = await api.post('/calendar/events', {
@@ -23,9 +28,15 @@ export const calendarApi = {
         },
       });
       
-      return response.data;
+      console.log("createCalendar - server response:", response.data);
+      
+      // Повертаємо дані створеного події з ID
+      const createdEvent = response.data?.events?.added?.[0] || response.data;
+      console.log("createCalendar - returning created event:", createdEvent);
+      return createdEvent;
     } catch (error) {
       console.error("Create failed:", error);
+      console.error("Error response:", error.response?.data);
       throw error;
     }
   },
@@ -43,6 +54,21 @@ export const calendarApi = {
   deleteCalendar: async (id: string) => {
     const response = await api.delete(`/calendar/events/${id}`);
     return response.data;
+  },
+
+  deleteCalendarEvent: async (eventId: string) => {
+    console.log("deleteCalendarEvent - deleting event ID:", eventId);
+    
+    try {
+      const response = await api.delete(`/calendar/events/${eventId}`);
+      
+      console.log("deleteCalendarEvent - server response:", response.data);
+      return response.data;
+    } catch (error) {
+      console.error("Delete failed:", error);
+      console.error("Error response:", error.response?.data);
+      throw error;
+    }
   },
 
   getStudentRemainingClasses: async (studentId: string) => {
@@ -91,7 +117,9 @@ export const calendarApi = {
         },
       });
       
-      return response.data;
+      // Повертаємо дані оновленого події
+      const updatedEvent = response.data?.events?.updated?.[0] || response.data;
+      return updatedEvent;
     } catch (error) {
       console.error("Update failed:", error);
       throw error;
