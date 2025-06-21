@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../config";
 import "./ClassesPage.css";
@@ -105,6 +105,11 @@ export default function ClassesPage() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
 
+  // Refs для контролю синхронізації
+  const lastUpdateRef = useRef<number>(0);
+  const isUpdatingRef = useRef<boolean>(false);
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const fetchTeachers = async () => {
     try {
       console.log("Fetching teachers...");
@@ -153,218 +158,246 @@ export default function ClassesPage() {
     }
   };
 
-  const fetchClasses = useCallback(async () => {
-    console.log("🚀 fetchClasses called at:", new Date().toISOString());
-    try {
-      setLoading(true);
-      console.log("Fetching classes...");
-
-      // Завжди завантажуємо свіжі дані з сервера для кращої синхронізації
-      const response = await api.get("/calendar/events");
-      console.log("Raw API response data:", response.data);
-
-      // Get events from the correct path: response.data.events.rows
-      const events = response.data.events?.rows || [];
-      console.log("Events array:", events);
-
-      if (!Array.isArray(events)) {
-        console.error("Events is not an array:", events);
-        setError("Invalid data format received");
+  const fetchClasses = useCallback(
+    async (forceRefresh = false) => {
+      // Запобігаємо одночасним оновленням
+      if (isUpdatingRef.current && !forceRefresh) {
+        console.log("⏳ Update already in progress, skipping");
         return;
       }
 
-      if (events.length === 0) {
-        console.log("No events received");
-        setClasses([]);
+      const currentTime = Date.now();
+      const timeSinceLastUpdate = currentTime - lastUpdateRef.current;
+
+      // Не оновлюємо частіше ніж раз на 2 секунди (крім примусового оновлення)
+      if (timeSinceLastUpdate < 2000 && !forceRefresh) {
+        console.log("⏳ Too soon since last update, skipping");
         return;
       }
 
-      console.log(`Total events received from server: ${events.length}`);
-      console.log("Current teachers state:", teachers);
-      console.log("Current students state:", students);
-      console.log("🔄 Processing events for classes page...");
+      console.log("🚀 fetchClasses called at:", new Date().toISOString());
+      try {
+        isUpdatingRef.current = true;
+        setLoading(true);
+        console.log("Fetching classes...");
 
-      const mapped = events
-        .map((event: any) => {
-          console.log("Processing event:", event);
-          console.log("Event fields:", Object.keys(event));
+        const response = await api.get("/calendar/events");
+        console.log("Raw API response data:", response.data);
 
-          // Use teacher_id instead of resourceId for consistency with calendar
-          const teacherId =
-            event.teacher_id || event.teacherId || event.resourceId;
-          const teacherName = teachers.find(
-            (t) => t.id === teacherId?.toString()
-          )?.name;
-          console.log(
-            "Found teacher name:",
-            teacherName,
-            "for teacherId:",
-            teacherId
-          );
+        const events = response.data.events?.rows || [];
+        console.log("Events array:", events);
 
-          // Convert UTC date to user timezone for display
-          const startDate = event.startDate
-            ? dayjs.utc(event.startDate).tz(timezone)
-            : null;
-          const endDate = event.endDate
-            ? dayjs.utc(event.endDate).tz(timezone)
-            : null;
+        if (!Array.isArray(events)) {
+          console.error("Events is not an array:", events);
+          setError("Invalid data format received");
+          return;
+        }
 
-          console.log(`Processing event ${event.id}:`, {
-            originalStartDate: event.startDate,
-            parsedStartDate: startDate?.format("YYYY-MM-DD HH:mm:ss"),
-            timezone: timezone,
-            fullDateTimeCreated: startDate ? startDate.toDate() : null,
+        if (events.length === 0) {
+          console.log("No events received");
+          setClasses([]);
+          return;
+        }
+
+        console.log(`Total events received from server: ${events.length}`);
+        console.log("Current teachers state:", teachers);
+        console.log("Current students state:", students);
+        console.log("🔄 Processing events for classes page...");
+
+        const mapped = events
+          .map((event: any) => {
+            console.log("Processing event:", event);
+            console.log("Event fields:", Object.keys(event));
+
+            const teacherId =
+              event.teacher_id || event.teacherId || event.resourceId;
+            const teacherName = teachers.find(
+              (t) => t.id === teacherId?.toString()
+            )?.name;
+            console.log(
+              "Found teacher name:",
+              teacherName,
+              "for teacherId:",
+              teacherId
+            );
+
+            // Convert date to user timezone for display (without double conversion)
+            const startDate = event.startDate
+              ? dayjs(event.startDate).tz(timezone)
+              : null;
+            const endDate = event.endDate
+              ? dayjs(event.endDate).tz(timezone)
+              : null;
+
+            console.log(`Processing event ${event.id}:`, {
+              originalStartDate: event.startDate,
+              originalEndDate: event.endDate,
+              parsedStartDate: startDate?.format("YYYY-MM-DD HH:mm:ss"),
+              parsedEndDate: endDate?.format("YYYY-MM-DD HH:mm:ss"),
+              timezone: timezone,
+              userTimezone: timezone,
+              fullDateTimeCreated: startDate ? startDate.toDate() : null,
+              rawEventData: event,
+            });
+
+            const mappedEvent = {
+              id: event.id?.toString() || "",
+              studentId: event.student_id || event.studentId || "",
+              teacherId: teacherId?.toString() || "",
+              studentName:
+                event.student_name_text ||
+                event.student_name ||
+                event.studentName ||
+                "Unknown Student",
+              teacherName:
+                teacherName ||
+                event.teacher_name ||
+                event.teacherName ||
+                "Unknown Teacher",
+              date: startDate?.format("YYYY-MM-DD") || "",
+              status: event.class_status || event.status || "scheduled",
+              time: startDate?.format("HH:mm") || "",
+              type: event.class_type || event.type || "regular",
+              fullDateTime: startDate ? startDate.toDate() : new Date(),
+            };
+
+            console.log("📅 Mapped event from calendar:", {
+              id: mappedEvent.id,
+              studentName: mappedEvent.studentName,
+              teacherName: mappedEvent.teacherName,
+              date: mappedEvent.date,
+              time: mappedEvent.time,
+              status: mappedEvent.status,
+              type: mappedEvent.type,
+            });
+
+            return mappedEvent;
+          })
+          .filter((event: any) => {
+            const status = event.status?.toLowerCase();
+            const classType = event.type?.toLowerCase();
+
+            console.log(
+              `Filtering event ${event.id}: status="${status}" (original: "${event.status}"), type="${classType}"`
+            );
+
+            const shouldInclude =
+              status !== "unavailable" &&
+              status !== "scheduled" &&
+              classType !== "unavailable" &&
+              classType !== "unavailable-lesson";
+
+            if (!shouldInclude) {
+              console.log(
+                `❌ Excluding event ${event.id} due to status "${status}" or type "${classType}"`
+              );
+            } else {
+              console.log(
+                `✅ Including event ${event.id} with status "${status}" and type "${classType}"`
+              );
+            }
+
+            return shouldInclude;
+          })
+          .sort((a: any, b: any) => {
+            const aDate = new Date(a.fullDateTime);
+            const bDate = new Date(b.fullDateTime);
+
+            let aTime = aDate.getTime();
+            let bTime = bDate.getTime();
+
+            if (isNaN(aTime) || aTime === 0) {
+              const aDateTimeStr = `${a.date} ${a.time}`;
+              aTime = new Date(aDateTimeStr).getTime();
+              console.log(`Fallback for A: ${aDateTimeStr} -> ${aTime}`);
+            }
+
+            if (isNaN(bTime) || bTime === 0) {
+              const bDateTimeStr = `${b.date} ${b.time}`;
+              bTime = new Date(bDateTimeStr).getTime();
+              console.log(`Fallback for B: ${bDateTimeStr} -> ${bTime}`);
+            }
+
+            console.log(
+              `Sorting: ${a.date} ${a.time} (${aTime}) vs ${b.date} ${b.time} (${bTime})`
+            );
+
+            return bTime - aTime;
           });
 
-          const mappedEvent = {
-            id: event.id?.toString() || "",
-            studentId: event.student_id || event.studentId || "",
-            teacherId: teacherId?.toString() || "",
-            studentName:
-              event.student_name_text ||
-              event.student_name ||
-              event.studentName ||
-              "Unknown Student",
-            teacherName:
-              teacherName ||
-              event.teacher_name ||
-              event.teacherName ||
-              "Unknown Teacher",
-            date: startDate?.format("YYYY-MM-DD") || "",
-            status: event.class_status || event.status || "scheduled",
-            time: startDate?.format("HH:mm") || "",
-            type: event.class_type || event.type || "regular",
-            fullDateTime: startDate ? startDate.toDate() : new Date(), // For sorting - ensure proper date object
-          };
+        console.log(`Events after filtering: ${mapped.length}`);
+        console.log("Final mapped events:", mapped);
 
-          console.log("📅 Mapped event from calendar:", {
-            id: mappedEvent.id,
-            studentName: mappedEvent.studentName,
-            teacherName: mappedEvent.teacherName,
-            date: mappedEvent.date,
-            time: mappedEvent.time,
-            status: mappedEvent.status,
-            type: mappedEvent.type,
-          });
+        const uniqueStatuses = [
+          ...new Set(mapped.map((event) => event.status)),
+        ];
+        console.log("🔍 All unique statuses in data:", uniqueStatuses);
 
-          return mappedEvent;
-        })
-        .filter((event: any) => {
-          // Покращена фільтрація - включаємо більше типів подій
-          const status = event.status?.toLowerCase();
-          const classType = event.type?.toLowerCase();
+        const uniqueTypes = [...new Set(mapped.map((event) => event.type))];
+        console.log("🔍 All unique class types in data:", uniqueTypes);
 
-          console.log(
-            `Filtering event ${event.id}: status="${status}" (original: "${event.status}"), type="${classType}"`
-          );
+        const trialRecords = mapped.filter((event) =>
+          event.type.includes("Trial")
+        );
+        console.log("🔍 All Trial records:", trialRecords);
 
-          // Включаємо всі події крім unavailable та scheduled
-          const shouldInclude =
-            status !== "unavailable" &&
-            status !== "scheduled" &&
-            classType !== "unavailable" &&
-            classType !== "unavailable-lesson";
+        console.log(
+          "🔍 All records with types:",
+          mapped.map((event) => ({
+            id: event.id,
+            type: event.type,
+            studentName: event.studentName,
+          }))
+        );
 
-          if (!shouldInclude) {
-            console.log(
-              `❌ Excluding event ${event.id} due to status "${status}" or type "${classType}"`
-            );
-          } else {
-            console.log(
-              `✅ Including event ${event.id} with status "${status}" and type "${classType}"`
-            );
-          }
+        console.log("✅ Classes page synchronization completed");
 
-          return shouldInclude;
-        })
-        .sort((a: any, b: any) => {
-          // Create proper date objects for comparison
-          const aDate = new Date(a.fullDateTime);
-          const bDate = new Date(b.fullDateTime);
-
-          // If fullDateTime is not working properly, try to create date from date and time strings
-          let aTime = aDate.getTime();
-          let bTime = bDate.getTime();
-
-          // Fallback: create date from date and time strings if fullDateTime is invalid
-          if (isNaN(aTime) || aTime === 0) {
-            const aDateTimeStr = `${a.date} ${a.time}`;
-            aTime = new Date(aDateTimeStr).getTime();
-            console.log(`Fallback for A: ${aDateTimeStr} -> ${aTime}`);
-          }
-
-          if (isNaN(bTime) || bTime === 0) {
-            const bDateTimeStr = `${b.date} ${b.time}`;
-            bTime = new Date(bDateTimeStr).getTime();
-            console.log(`Fallback for B: ${bDateTimeStr} -> ${bTime}`);
-          }
-
-          console.log(
-            `Sorting: ${a.date} ${a.time} (${aTime}) vs ${b.date} ${b.time} (${bTime})`
-          );
-
-          // Sort in descending order (most recent first)
-          return bTime - aTime;
+        const isSortedCorrectly = mapped.every((event, index) => {
+          if (index === 0) return true;
+          const currentTime = new Date(event.fullDateTime).getTime();
+          const previousTime = new Date(
+            mapped[index - 1].fullDateTime
+          ).getTime();
+          return currentTime <= previousTime;
         });
 
-      console.log(`Events after filtering: ${mapped.length}`);
-      console.log("Final mapped events:", mapped);
+        console.log(
+          "Sorting verification:",
+          isSortedCorrectly ? "✅ Correct" : "❌ Incorrect"
+        );
 
-      // Логуємо всі унікальні типи
-      const uniqueTypes = [...new Set(mapped.map((event) => event.type))];
-      console.log("🔍 All unique class types in data:", uniqueTypes);
+        setClasses(mapped);
+        setError(null);
+        lastUpdateRef.current = currentTime;
 
-      // Тимчасове логування всіх Trial записів
-      const trialRecords = mapped.filter((event) =>
-        event.type.includes("Trial")
-      );
-      console.log("🔍 All Trial records:", trialRecords);
-
-      // Логуємо всі записи з їх типами
-      console.log(
-        "🔍 All records with types:",
-        mapped.map((event) => ({
-          id: event.id,
-          type: event.type,
-          studentName: event.studentName,
-        }))
-      );
-
-      console.log("✅ Classes page synchronization completed");
-
-      // Verify sorting is correct
-      const isSortedCorrectly = mapped.every((event, index) => {
-        if (index === 0) return true;
-        const currentTime = new Date(event.fullDateTime).getTime();
-        const previousTime = new Date(mapped[index - 1].fullDateTime).getTime();
-        return currentTime <= previousTime; // Should be descending order
-      });
-
-      console.log(
-        "Sorting verification:",
-        isSortedCorrectly ? "✅ Correct" : "❌ Incorrect"
-      );
-
-      setClasses(mapped);
-      setError(null);
-
-      // Зберігаємо дані в localStorage для кешування
-      localStorage.setItem("classes", JSON.stringify(mapped));
-      localStorage.setItem("classesLastUpdated", Date.now().toString());
-      console.log("Saved classes to localStorage");
-    } catch (err) {
-      console.error("Error fetching classes:", err);
-      if (err.response) {
-        console.error("Error response:", err.response);
-        console.error("Error status:", err.response.status);
-        console.error("Error data:", err.response.data);
+        console.log("✅ Classes data updated successfully");
+      } catch (err) {
+        console.error("Error fetching classes:", err);
+        if (err.response) {
+          console.error("Error response:", err.response);
+          console.error("Error status:", err.response.status);
+          console.error("Error data:", err.response.data);
+        }
+        setError("Failed to fetch classes");
+      } finally {
+        setLoading(false);
+        isUpdatingRef.current = false;
       }
-      setError("Failed to fetch classes");
-    } finally {
-      setLoading(false);
+    },
+    [teachers, students, timezone]
+  );
+
+  // Оптимізована функція для обробки оновлень
+  const handleDataUpdate = useCallback(async () => {
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
     }
-  }, [teachers, students, timezone]);
+
+    updateTimeoutRef.current = setTimeout(async () => {
+      console.log("🔄 Handling data update...");
+      await fetchClasses(true);
+    }, 500);
+  }, [fetchClasses]);
 
   // First load teachers and students
   useEffect(() => {
@@ -384,54 +417,53 @@ export default function ClassesPage() {
     });
     if (teachers.length > 0 && students.length > 0) {
       console.log("Both teachers and students loaded, fetching classes");
-      fetchClasses();
+      fetchClasses(true);
     }
   }, [teachers, students, fetchClasses]);
 
-  // Add effect to check for calendar updates
+  // Спрощена синхронізація з календарем
   useEffect(() => {
-    const checkForUpdates = () => {
-      const lastUpdate = localStorage.getItem("calendarEventsUpdated");
-      const classesLastUpdate = localStorage.getItem("classesLastUpdated");
-      console.log("🔍 Checking for calendar updates:", {
-        lastUpdate,
-        classesLastUpdate,
-        currentTime: Date.now(),
-      });
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "calendarEventsUpdated" && e.newValue) {
+        console.log("🔄 Calendar update detected via storage");
+        handleDataUpdate();
+      }
+    };
 
+    const handleCustomEvent = () => {
+      console.log("🔄 Calendar update detected via custom event");
+      handleDataUpdate();
+    };
+
+    // Перевіряємо оновлення кожні 10 секунд замість 3
+    const interval = setInterval(() => {
+      const lastUpdate = localStorage.getItem("calendarEventsUpdated");
       if (lastUpdate) {
         const lastUpdateTime = parseInt(lastUpdate);
         const currentTime = Date.now();
         const timeDiff = currentTime - lastUpdateTime;
 
-        console.log("🔍 Update check:", {
-          lastUpdateTime,
-          currentTime,
-          timeDiff,
-          shouldUpdate: timeDiff < 30000, // Збільшуємо до 30 секунд
-        });
-
-        // If the update was recent (within last 30 seconds), refresh data
         if (timeDiff < 30000) {
-          console.log("🔄 Calendar events updated, refreshing classes data");
-          // Clear localStorage to force fresh data from server
-          localStorage.removeItem("classes");
-          localStorage.removeItem("classesLastUpdated");
-          fetchClasses();
-          // Clear the update flag to avoid repeated refreshes
+          // 30 секунд замість 15
+          console.log("🔄 Recent calendar update detected");
+          handleDataUpdate();
           localStorage.removeItem("calendarEventsUpdated");
         }
       }
+    }, 10000); // 10 секунд замість 3
+
+    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("calendarUpdate", handleCustomEvent);
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("calendarUpdate", handleCustomEvent);
+      clearInterval(interval);
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
     };
-
-    // Check for updates every 2 seconds для кращої синхронізації
-    const interval = setInterval(checkForUpdates, 2000);
-
-    // Also check immediately when component mounts
-    checkForUpdates();
-
-    return () => clearInterval(interval);
-  }, [fetchClasses]);
+  }, [handleDataUpdate]);
 
   const handleOpenModal = () => {
     setShowModal(true);
@@ -451,18 +483,12 @@ export default function ClassesPage() {
       if (response) {
         console.log("Deleted class:", response);
 
-        // Clear localStorage to force refresh from server
-        localStorage.removeItem("classes");
-        localStorage.removeItem("classesLastUpdated");
+        // Оновлюємо дані після видалення
+        await fetchClasses(true);
 
-        // Refresh the classes list immediately
-        await fetchClasses();
-
-        // Notify calendar component that events have been updated
+        // Сповіщаємо календар про оновлення
         localStorage.setItem("calendarEventsUpdated", Date.now().toString());
-
-        // Also notify that classes have been updated
-        localStorage.setItem("lessonsUpdated", Date.now().toString());
+        window.dispatchEvent(new Event("calendarUpdate"));
 
         toast.success("Class deleted successfully");
       }
@@ -535,6 +561,31 @@ export default function ClassesPage() {
     });
   };
 
+  // Кастомна функція сортування статусів
+  const sortStatuses = (a: string, b: string) => {
+    const getStatusOrder = (status: string) => {
+      const normalizedStatus = status.toLowerCase().replace(/\s+/g, "");
+
+      if (normalizedStatus.includes("given")) return 1;
+      if (normalizedStatus.includes("cancelled")) return 2;
+      if (
+        normalizedStatus.includes("noshowstudent") ||
+        normalizedStatus.includes("student")
+      )
+        return 3;
+      if (
+        normalizedStatus.includes("noshowteacher") ||
+        normalizedStatus.includes("teacher")
+      )
+        return 4;
+      if (normalizedStatus.includes("scheduled")) return 5;
+
+      return 999;
+    };
+
+    return getStatusOrder(a) - getStatusOrder(b);
+  };
+
   const columns: TableColumnsType<Class> = [
     {
       title: "Date",
@@ -545,7 +596,7 @@ export default function ClassesPage() {
       sorter: (a, b) => {
         const aTime = new Date(a.fullDateTime).getTime();
         const bTime = new Date(b.fullDateTime).getTime();
-        return bTime - aTime; // Descending order (newest first)
+        return bTime - aTime;
       },
     },
     {
@@ -557,7 +608,7 @@ export default function ClassesPage() {
       sorter: (a, b) => {
         const aTime = new Date(a.fullDateTime).getTime();
         const bTime = new Date(b.fullDateTime).getTime();
-        return bTime - aTime; // Descending order (newest first)
+        return bTime - aTime;
       },
     },
     {
@@ -632,7 +683,6 @@ export default function ClassesPage() {
           studentName: record.studentName,
         });
 
-        // Якщо вибрано "Trial", включаємо і "Trial-Lesson"
         if (value === "Trial") {
           const matches =
             record.type === "Trial" || record.type === "Trial-Lesson";
@@ -649,7 +699,6 @@ export default function ClassesPage() {
           return matches;
         }
 
-        // Якщо вибрано "Regular", включаємо і "Regular-Lesson"
         if (value === "Regular") {
           const matches =
             record.type === "Regular" || record.type === "Regular-Lesson";
@@ -664,7 +713,6 @@ export default function ClassesPage() {
           return matches;
         }
 
-        // Для інших типів - точний збіг
         const matches = record.type === value;
         console.log(
           "Direct match:",
@@ -686,27 +734,31 @@ export default function ClassesPage() {
       key: "status",
       width: "15%",
       render: (status: string) => (
-        <span
-          style={{
-            color: status?.toLowerCase() === "given" ? "#22d3ee" : "#e5e7eb",
-            fontWeight: 600,
-          }}
-        >
-          {status ? status.charAt(0).toUpperCase() + status.slice(1) : ""}
-        </span>
+        <span style={{ fontWeight: 600 }}>{status || ""}</span>
       ),
-      sorter: (a, b) => (a.status || "").localeCompare(b.status || ""),
+      sorter: (a, b) => sortStatuses(a.status, b.status),
       filters: [
-        { text: "Cancelled", value: "cancelled" },
         { text: "Given", value: "given" },
-        { text: "Student No Show", value: "student_no_show" },
-        { text: "Teacher No Show", value: "teacher_no_show" },
+        { text: "Cancelled", value: "cancelled" },
+        { text: "Student No Show", value: "student" },
+        { text: "Teacher No Show", value: "teacher" },
+        { text: "Scheduled", value: "scheduled" },
       ],
       filterMultiple: true,
       onFilter: (value, record) => {
-        return Array.isArray(value)
-          ? value.includes(record.status)
-          : record.status === value;
+        const normalizedValue = String(value).toLowerCase().replace(/\s+/g, "");
+        const normalizedStatus = record.status
+          .toLowerCase()
+          .replace(/\s+/g, "");
+
+        if (normalizedValue === "student") {
+          return normalizedStatus.includes("student");
+        }
+        if (normalizedValue === "teacher") {
+          return normalizedStatus.includes("teacher");
+        }
+
+        return normalizedStatus.includes(normalizedValue);
       },
       filterIcon: (filtered) => (
         <FilterOutlined style={{ color: filtered ? "#1890ff" : undefined }} />
@@ -761,16 +813,6 @@ export default function ClassesPage() {
                 <div className="size-2 animate-pulse rounded-full bg-green-400" />
               </div>
               <div className="flex items-center gap-2">
-                <Button
-                  type="default"
-                  onClick={() => {
-                    localStorage.removeItem("classes");
-                    fetchClasses();
-                  }}
-                  className="rounded-lg border-gray-600 bg-gray-700 text-white font-medium shadow-lg transition-all hover:bg-gray-600"
-                >
-                  Sync with Calendar
-                </Button>
                 <Button
                   type="default"
                   onClick={handleDownloadCSV}
@@ -828,18 +870,16 @@ export default function ClassesPage() {
         <AddEditClassModal
           visible={showModal}
           onCancel={handleCloseModal}
-          onSuccess={() => {
+          onSuccess={async () => {
             handleCloseModal();
-            // Примусово оновлюємо сторінку після створення через lessons
-            localStorage.removeItem("classes"); // Clear localStorage to force server fetch
-            // Notify calendar about the update
+            // Оновлюємо дані після створення
+            await fetchClasses(true);
+            // Сповіщаємо календар про оновлення
             localStorage.setItem(
               "calendarEventsUpdated",
               Date.now().toString()
             );
-            setTimeout(() => {
-              fetchClasses();
-            }, 1000);
+            window.dispatchEvent(new Event("calendarUpdate"));
           }}
           editData={null}
           students={students}
@@ -854,9 +894,10 @@ export default function ClassesPage() {
             setShowEditModal(false);
             setEditingClass(null);
           }}
-          onSuccess={(updatedData) => {
+          onSuccess={async (updatedData) => {
             setShowEditModal(false);
             setEditingClass(null);
+
             // Оновлюємо локальний стан після редагування
             if (updatedData) {
               setClasses((prevClasses) =>
@@ -865,80 +906,29 @@ export default function ClassesPage() {
                 )
               );
             }
-            // Примусово оновлюємо дані з сервера
-            localStorage.removeItem("classes");
-            // Notify calendar about the update
+
+            // Оновлюємо дані з сервера
+            await fetchClasses(true);
+
+            // Сповіщаємо календар про оновлення
             localStorage.setItem(
               "calendarEventsUpdated",
               Date.now().toString()
             );
-            setTimeout(() => {
-              fetchClasses();
-            }, 1000);
+            window.dispatchEvent(new Event("calendarUpdate"));
           }}
           editData={(() => {
-            // Знаходимо студента за ім'ям, якщо studentId порожній
-            let studentId = editingClass.studentId;
-            if (!studentId && editingClass.studentName) {
-              const foundStudent = students.find(
-                (s) => s.name === editingClass.studentName
-              );
-              if (foundStudent) {
-                studentId = foundStudent.id;
-                console.log(
-                  "Found student by name:",
-                  editingClass.studentName,
-                  "ID:",
-                  foundStudent.id
-                );
-              } else {
-                console.log(
-                  "Student not found by name:",
-                  editingClass.studentName
-                );
-                console.log(
-                  "Available students:",
-                  students.map((s) => ({ name: s.name, id: s.id }))
-                );
-              }
-            }
-
-            // Знаходимо вчителя за ім'ям, якщо teacherId порожній
-            let teacherId = editingClass.teacherId;
-            if (!teacherId && editingClass.teacherName) {
-              const foundTeacher = teachers.find(
-                (t) => t.name === editingClass.teacherName
-              );
-              if (foundTeacher) {
-                teacherId = foundTeacher.id;
-                console.log(
-                  "Found teacher by name:",
-                  editingClass.teacherName,
-                  "ID:",
-                  foundTeacher.id
-                );
-              } else {
-                console.log(
-                  "Teacher not found by name:",
-                  editingClass.teacherName
-                );
-                console.log(
-                  "Available teachers:",
-                  teachers.map((t) => ({ name: t.name, id: t.id }))
-                );
-              }
-            }
-
+            // Створюємо простий об'єкт з необхідними даними для редагування
             const editData = {
               id: editingClass.id,
-              studentId: studentId,
-              teacherId: teacherId,
+              studentId: editingClass.studentId,
+              teacherId: editingClass.teacherId,
               date: editingClass.date,
               time: editingClass.time,
               status: editingClass.status,
               type: editingClass.type,
             };
-            console.log("Final edit data:", editData);
+            console.log("Edit data for modal:", editData);
             return editData;
           })()}
           students={students}

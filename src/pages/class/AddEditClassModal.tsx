@@ -1,8 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { Modal, Form, Select, DatePicker, Button, message } from "antd";
 import dayjs from "dayjs";
+import timezone from "dayjs/plugin/timezone";
+import utc from "dayjs/plugin/utc";
 import { calendarApi } from "../../api/calendar";
+import api from "../../config";
+import { useTimezone } from "../../contexts/TimezoneContext";
+import { DEFAULT_DB_TIMEZONE } from "../../utils/timezone";
 import "./AddEditClassModal.css";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 interface AddEditClassModalProps {
   visible: boolean;
@@ -38,6 +46,7 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
   teachers,
   students,
 }) => {
+  const { timezone: userTimezone } = useTimezone();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<ClassFormData>({
@@ -45,141 +54,177 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
     time: "",
     studentId: "",
     teacherId: "",
-    status: "Scheduled",
-    type: "Regular",
+    status: "scheduled",
+    type: "regular",
   });
 
   const isEditMode = !!editData;
 
   useEffect(() => {
     if (visible && editData) {
-      // Розділяємо дату та час для редагування
-      const dateTime = dayjs(editData.date + " " + editData.time);
-      setFormData({
+      console.log("Setting up edit mode with data:", editData);
+
+      // Правильно обробляємо дату та час для редагування
+      let dateTime;
+      try {
+        // Спробуємо створити дату з існуючих даних
+        if (editData.date && editData.time) {
+          dateTime = dayjs.tz(
+            `${editData.date} ${editData.time}`,
+            userTimezone
+          );
+        } else {
+          dateTime = dayjs().tz(userTimezone);
+        }
+      } catch (error) {
+        console.error("Error parsing date/time:", error);
+        dateTime = dayjs().tz(userTimezone);
+      }
+
+      const newFormData = {
         date: dateTime.format("YYYY-MM-DD"),
-        time: editData.time,
-        studentId: editData.studentId,
-        teacherId: editData.teacherId,
-        status: editData.status,
-        type: editData.type,
-      });
+        time: editData.time || dateTime.format("HH:mm"),
+        studentId: editData.studentId || "",
+        teacherId: editData.teacherId || "",
+        status: editData.status || "scheduled",
+        type: editData.type || "regular",
+      };
+
+      setFormData(newFormData);
+
       form.setFieldsValue({
         date: dateTime,
-        time: editData.time,
-        studentId: editData.studentId,
-        teacherId: editData.teacherId,
-        status: editData.status,
-        type: editData.type,
+        time: newFormData.time,
+        studentId: newFormData.studentId,
+        teacherId: newFormData.teacherId,
+        status: newFormData.status,
+        type: newFormData.type,
       });
-      console.log("Setting form values for edit:", {
-        date: dateTime,
-        time: editData.time,
-        studentId: editData.studentId,
-        teacherId: editData.teacherId,
-        status: editData.status,
-        type: editData.type,
-      });
-      console.log(
-        "Available students:",
-        students.map((s) => ({ name: s.name, id: s.id }))
-      );
-      console.log(
-        "Available teachers:",
-        teachers.map((t) => ({ name: t.name, id: t.id }))
-      );
 
-      // Перевіряємо, чи існують студент та вчитель з цими ID
-      const studentExists = students.find((s) => s.id === editData.studentId);
-      const teacherExists = teachers.find((t) => t.id === editData.teacherId);
-      console.log("Student exists:", studentExists);
-      console.log("Teacher exists:", teacherExists);
+      console.log("Form values set for edit:", {
+        date: dateTime.format("YYYY-MM-DD HH:mm:ss"),
+        time: newFormData.time,
+        studentId: newFormData.studentId,
+        teacherId: newFormData.teacherId,
+        status: newFormData.status,
+        type: newFormData.type,
+      });
     } else if (visible && !editData) {
       // Скидаємо форму для створення нового класу
-      setFormData({
-        date: "",
-        time: "",
+      const now = dayjs().tz(userTimezone);
+      const newFormData = {
+        date: now.format("YYYY-MM-DD"),
+        time: now.format("HH:mm"),
         studentId: "",
         teacherId: "",
-        status: "Scheduled",
-        type: "Regular",
-      });
+        status: "scheduled",
+        type: "regular",
+      };
+
+      setFormData(newFormData);
       form.resetFields();
+      form.setFieldsValue({
+        date: now,
+        time: newFormData.time,
+        status: newFormData.status,
+        type: newFormData.type,
+      });
     }
-  }, [visible, editData, form, students, teachers]);
-
-  // Додатковий useEffect для оновлення formData коли змінюються students або teachers
-  useEffect(() => {
-    if (visible && editData && students.length > 0 && teachers.length > 0) {
-      // Перевіряємо, чи існують студент та вчитель з цими ID
-      const studentExists = students.find((s) => s.id === editData.studentId);
-      const teacherExists = teachers.find((t) => t.id === editData.teacherId);
-
-      if (studentExists && teacherExists) {
-        const dateTime = dayjs(editData.date + " " + editData.time);
-        setFormData({
-          date: dateTime.format("YYYY-MM-DD"),
-          time: editData.time,
-          studentId: editData.studentId,
-          teacherId: editData.teacherId,
-          status: editData.status,
-          type: editData.type,
-        });
-        form.setFieldsValue({
-          date: dateTime,
-          time: editData.time,
-          studentId: editData.studentId,
-          teacherId: editData.teacherId,
-          status: editData.status,
-          type: editData.type,
-        });
-        console.log("Updated form values after students/teachers loaded");
-      }
-    }
-  }, [students, teachers, visible, editData, form]);
+  }, [visible, editData, form, userTimezone]);
 
   const handleSubmit = async () => {
     try {
       setLoading(true);
       const values = await form.validateFields();
 
-      console.log("Form values:", values); // Для дебагу
+      console.log("Form values:", values);
 
+      // Перевіряємо чи можна встановити статус "Given" для студента
+      if (values.status === "Given" && values.studentId) {
+        try {
+          console.log(
+            "🔍 Checking student's remaining classes before setting 'Given' status..."
+          );
+          const studentResponse = await calendarApi.getStudentRemainingClasses(
+            values.studentId
+          );
+          const remainingClasses = studentResponse.remainingClasses || 0;
+
+          console.log("🔍 Student remaining classes:", {
+            studentId: values.studentId,
+            remainingClasses,
+            canSetGiven: remainingClasses > 0,
+          });
+
+          // Якщо студент не має оплачених уроків, не дозволяємо встановлювати статус "Given"
+          if (remainingClasses <= 0) {
+            console.log(
+              "❌ Cannot set status to 'Given' - student has no paid classes"
+            );
+            message.error(
+              "Cannot mark lesson as 'Given' - student has no paid classes"
+            );
+            return; // Вихід - не дозволяємо зміну статусу
+          }
+        } catch (error) {
+          console.error("Error checking student's remaining classes:", error);
+          message.error("Failed to verify student's class balance");
+          return; // Вихід якщо не можемо перевірити баланс студента
+        }
+      }
+
+      // Правильно обробляємо дату та час
       const dateTime = dayjs(values.date);
       const timeString = values.time || "00:00";
 
-      // Формуємо дату та час для календаря
-      const startDateTime = dayjs(
-        `${dateTime.format("YYYY-MM-DD")} ${timeString}`
+      // Формуємо повну дату та час в часовому поясі користувача
+      const startDateTime = dayjs.tz(
+        `${dateTime.format("YYYY-MM-DD")} ${timeString}`,
+        userTimezone
       );
-      const endDateTime = startDateTime.add(1, "hour"); // Клас триває 1 годину
+
+      // Визначаємо тривалість класу залежно від типу
+      let duration = 50; // за замовчуванням 50 хвилин
+      if (values.type === "trial") {
+        duration = 30;
+      }
+
+      const endDateTime = startDateTime.add(duration, "minute");
+
+      console.log("Event timing:", {
+        startDateTime: startDateTime.format("YYYY-MM-DD HH:mm:ss"),
+        endDateTime: endDateTime.format("YYYY-MM-DD HH:mm:ss"),
+        duration: duration,
+        timezone: userTimezone,
+      });
 
       if (isEditMode && editData) {
-        // Оновлення існуючого класу через календар API
+        // Оновлення існуючого класу
         console.log("Updating lesson with ID:", editData.id);
 
-        const eventData = {
-          id: editData.id,
-          title: `Class: ${
-            students.find((s) => s.id === values.studentId)?.name
-          } - ${teachers.find((t) => t.id === values.teacherId)?.name}`,
-          start_date: startDateTime.format("YYYY-MM-DD HH:mm:ss"),
-          end_date: endDateTime.format("YYYY-MM-DD HH:mm:ss"),
-          teacher_id: parseInt(values.teacherId),
-          student_id: parseInt(values.studentId),
-          teacher_name:
-            teachers.find((t) => t.id === values.teacherId)?.name || "",
-          student_name:
-            students.find((s) => s.id === values.studentId)?.name || "",
-          class_status: values.status,
-          class_type: values.type,
-          payment_status: "pending",
+        // Підготовка даних для нового API
+        const updateData = {
+          date: dateTime.format("YYYY-MM-DD"),
+          startTime: timeString,
+          endTime: endDateTime.format("HH:mm"),
+          classType: values.type,
+          studentId: parseInt(values.studentId),
+          teacherId: parseInt(values.teacherId),
+          status: values.status,
         };
 
-        const updateResponse = await calendarApi.updateCalendarEvent(eventData);
-        console.log("Update response:", updateResponse);
+        console.log("Update event data for new API:", updateData);
+
+        // Використовуємо новий API для оновлення
+        const response = await calendarApi.updateEventComplete(
+          parseInt(editData.id),
+          updateData
+        );
+
+        console.log("Update response:", response);
         message.success("Class updated successfully!");
 
-        // Зберігаємо оновлені дані в localStorage
+        // Повертаємо оновлені дані
         const updatedClassData = {
           id: editData.id,
           studentId: values.studentId,
@@ -197,47 +242,36 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
           fullDateTime: startDateTime.toDate(),
         };
 
-        // Отримуємо поточні дані з localStorage
-        const existingClasses = JSON.parse(
-          localStorage.getItem("classes") || "[]"
-        );
-        const updatedClasses = existingClasses.map((cls: any) =>
-          cls.id === editData.id ? updatedClassData : cls
-        );
-        localStorage.setItem("classes", JSON.stringify(updatedClasses));
-
         onSuccess(updatedClassData);
       } else {
-        // Створення нового класу через календар API
-        console.log("Creating new lesson via calendar API");
+        // Створення нового класу
+        console.log("Creating new lesson");
+
+        // Конвертуємо в локальний час для API (без UTC конвертації)
+        const startLocal = startDateTime.format("YYYY-MM-DDTHH:mm:ss");
+        const endLocal = endDateTime.format("YYYY-MM-DDTHH:mm:ss");
 
         const eventData = {
-          title: `Class: ${
-            students.find((s) => s.id === values.studentId)?.name
-          } - ${teachers.find((t) => t.id === values.teacherId)?.name}`,
-          start_date: startDateTime.format("YYYY-MM-DD HH:mm:ss"),
-          end_date: endDateTime.format("YYYY-MM-DD HH:mm:ss"),
-          teacher_id: parseInt(values.teacherId),
-          student_id: parseInt(values.studentId),
-          teacher_name:
-            teachers.find((t) => t.id === values.teacherId)?.name || "",
-          student_name:
-            students.find((s) => s.id === values.studentId)?.name || "",
-          class_status: values.status,
           class_type: values.type,
-          payment_status: "pending",
+          student_id: parseInt(values.studentId),
+          teacher_id: parseInt(values.teacherId),
+          class_status: values.status,
+          payment_status: "reserved", // за замовчуванням
+          startDate: startLocal,
+          endDate: endLocal,
+          duration: duration,
         };
 
-        const createResponse = await calendarApi.createCalendar(eventData);
-        console.log("Create response:", createResponse);
+        console.log("Create event data:", eventData);
+
+        const response = await calendarApi.createCalendar(eventData);
+
+        console.log("Create response:", response);
         message.success("Class created successfully!");
 
-        // Створюємо об'єкт для додавання до локального стану
+        // Повертаємо дані нового класу
         const newClassData = {
-          id:
-            createResponse.id ||
-            createResponse.eventId ||
-            Date.now().toString(),
+          id: response.id || Date.now().toString(),
           studentId: values.studentId,
           teacherId: values.teacherId,
           studentName:
@@ -253,25 +287,21 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
           fullDateTime: startDateTime.toDate(),
         };
 
-        // Зберігаємо новий клас в localStorage
-        const existingClasses = JSON.parse(
-          localStorage.getItem("classes") || "[]"
-        );
-        existingClasses.push(newClassData);
-        localStorage.setItem("classes", JSON.stringify(existingClasses));
-
         onSuccess(newClassData);
       }
 
-      // Notify that lessons have been updated
-      localStorage.setItem("lessonsUpdated", Date.now().toString());
+      // Сповіщаємо про оновлення календаря
+      localStorage.setItem("calendarEventsUpdated", Date.now().toString());
+      window.dispatchEvent(new Event("calendarUpdate"));
 
-      // Clear localStorage classes to force refresh from server
-      localStorage.removeItem("classes");
+      // Додатково сповіщаємо про оновлення уроків
+      localStorage.setItem("lessonsUpdated", Date.now().toString());
+      window.dispatchEvent(new Event("lessonsUpdate"));
+
+      console.log("📢 Notifications sent for calendar and lessons updates");
     } catch (error: any) {
       console.error("Error saving class:", error);
 
-      // Якщо це помилка валідації форми, не показуємо повідомлення про помилку
       if (error.errorFields && error.errorFields.length > 0) {
         console.log("Validation errors:", error.errorFields);
         return;
@@ -309,15 +339,6 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
           Cancel
         </Button>,
         <Button
-          key="refresh"
-          onClick={() => {
-            localStorage.removeItem("classes");
-            window.location.reload();
-          }}
-        >
-          Refresh Data
-        </Button>,
-        <Button
           key="submit"
           type="primary"
           loading={loading}
@@ -335,8 +356,8 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
         form={form}
         layout="vertical"
         initialValues={{
-          status: "Scheduled",
-          type: "Regular",
+          status: "scheduled",
+          type: "regular",
         }}
         onFinish={handleSubmit}
       >
@@ -352,7 +373,6 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
             showToday={true}
             allowClear={false}
             disabledDate={(current) => {
-              // Дозволяємо вибирати дати тільки з сьогоднішнього дня
               return current && current < dayjs().startOf("day");
             }}
           />
@@ -403,10 +423,9 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
                 .includes(input.toLowerCase())
             }
           >
-            <Select.Option value="Trial">Trial</Select.Option>
-            <Select.Option value="Regular">Regular</Select.Option>
-            <Select.Option value="Instant">Instant</Select.Option>
-            <Select.Option value="Group">Group</Select.Option>
+            <Select.Option value="trial">Trial (30 min)</Select.Option>
+            <Select.Option value="regular">Regular (50 min)</Select.Option>
+            <Select.Option value="intensive">Intensive (50 min)</Select.Option>
           </Select>
         </Form.Item>
 
@@ -424,7 +443,6 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
                 .includes(input.toLowerCase())
             }
             optionFilterProp="children"
-            value={formData.studentId}
           >
             {students.map((student) => (
               <Select.Option key={student.id} value={student.id}>
@@ -448,7 +466,6 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
                 .includes(input.toLowerCase())
             }
             optionFilterProp="children"
-            value={formData.teacherId}
           >
             {teachers.map((teacher) => (
               <Select.Option key={teacher.id} value={teacher.id}>
@@ -473,14 +490,15 @@ const AddEditClassModal: React.FC<AddEditClassModalProps> = ({
             }
           >
             <Select.Option value="scheduled">Scheduled</Select.Option>
-            <Select.Option value="given">Given</Select.Option>
-            <Select.Option value="cancelled">Cancelled</Select.Option>
-            <Select.Option value="Student No Show">
-              Student No Show
+            <Select.Option value="Given">Given</Select.Option>
+            <Select.Option value="Cancelled">Cancelled</Select.Option>
+            <Select.Option value="No show student">
+              No show student
             </Select.Option>
-            <Select.Option value="Teacher No Show">
-              Teacher No Show
+            <Select.Option value="No show teacher">
+              No show teacher
             </Select.Option>
+            <Select.Option value="Unavailable">Unavailable</Select.Option>
           </Select>
         </Form.Item>
       </Form>

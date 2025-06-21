@@ -5,13 +5,23 @@ export const calendarApi = {
     // Prepare camelCase fields for backend compatibility
     const data = {
       ...eventData,
-      startDate: eventData.start_date,
-      endDate: eventData.end_date,
-      teacherName: eventData.teacher_name,
+      startDate: eventData.startDate || eventData.start_date || eventData.start,
+      endDate: eventData.endDate || eventData.end_date || eventData.end,
+      teacherName: eventData.teacherName || eventData.teacher_name,
     };
+    
+    // Remove the original fields to avoid duplication
     delete data.start_date;
     delete data.end_date;
     delete data.teacher_name;
+    
+    // Validate required fields
+    if (!data.startDate) {
+      throw new Error("startDate is required");
+    }
+    if (!data.endDate) {
+      throw new Error("endDate is required");
+    }
     
     console.log("createCalendar - original eventData:", eventData);
     console.log("createCalendar - processed data:", data);
@@ -97,8 +107,8 @@ export const calendarApi = {
     const data = {
       id: eventData.id,
       title: eventData.title,
-      startDate: eventData.start_date || eventData.start,
-      endDate: eventData.end_date || eventData.end,
+      startDate: eventData.startDate || eventData.start_date || eventData.start,
+      endDate: eventData.endDate || eventData.end_date || eventData.end,
       teacher_id: eventData.teacher_id || eventData.extendedProps?.teacherId || eventData.extendedProps?.teacher_id,
       student_id: eventData.student_id || eventData.extendedProps?.studentId || eventData.extendedProps?.student_id,
       teacher_name: eventData.teacher_name || eventData.extendedProps?.teacher_name,
@@ -107,6 +117,14 @@ export const calendarApi = {
       class_type: eventData.class_type || eventData.extendedProps?.class_type,
       payment_status: eventData.payment_status || eventData.extendedProps?.payment_status,
     };
+    
+    // Validate required fields
+    if (!data.startDate) {
+      throw new Error("startDate is required");
+    }
+    if (!data.endDate) {
+      throw new Error("endDate is required");
+    }
     
     console.log("updateCalendarEvent - processed data:", data);
     
@@ -122,6 +140,46 @@ export const calendarApi = {
       return updatedEvent;
     } catch (error) {
       console.error("Update failed:", error);
+      throw error;
+    }
+  },
+
+  updateEventComplete: async (eventId: number, eventData: {
+    date?: string;
+    startTime?: string;
+    endTime?: string;
+    classType?: string;
+    studentId?: number | null;
+    teacherId?: number;
+    status?: string;
+  }) => {
+    console.log("updateEventComplete - eventId:", eventId);
+    console.log("updateEventComplete - eventData:", eventData);
+    
+    try {
+      const response = await api.put(`/calendar/events/${eventId}/complete`, eventData);
+      
+      console.log("updateEventComplete - success response:", response.data);
+      return response.data;
+    } catch (error) {
+      console.error("updateEventComplete - error:", error);
+      throw error;
+    }
+  },
+
+  updateEventStatus: async (eventId: number, status: string) => {
+    console.log("updateEventStatus - eventId:", eventId);
+    console.log("updateEventStatus - status:", status);
+    
+    try {
+      const response = await api.patch(`/calendar/events/${eventId}/status`, {
+        class_status: status
+      });
+      
+      console.log("updateEventStatus - success response:", response.data);
+      return response.data;
+    } catch (error) {
+      console.error("updateEventStatus - error:", error);
       throw error;
     }
   }

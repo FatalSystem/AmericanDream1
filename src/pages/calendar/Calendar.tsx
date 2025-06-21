@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -33,7 +33,6 @@ import timezone from "dayjs/plugin/timezone";
 import utc from "dayjs/plugin/utc";
 import { useTimezone } from "../../contexts/TimezoneContext";
 import EventCreateForm from "./EventCreateForm";
-import { Event } from "../../../api/calendar";
 import { DateTime } from "luxon";
 import { DEFAULT_DB_TIMEZONE } from "../../utils/timezone";
 import type { LessonStatus } from "./EventCreateForm";
@@ -262,6 +261,7 @@ const Calendar: React.FC = () => {
     []
   );
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAvailabilityModalOpen, setIsAvailabilityModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -386,7 +386,7 @@ const Calendar: React.FC = () => {
     }
   };
 
-  const fetchEvents = async () => {
+  const fetchEvents = useCallback(async () => {
     if (!calendarRef.current) return;
 
     const calendarApi = calendarRef.current.getApi();
@@ -588,9 +588,11 @@ const Calendar: React.FC = () => {
           extendedProps: {
             teacherId: finalTeacherId,
             teacher_name: teacherName,
-            class_status: event.class_status || "scheduled",
-            class_type: event.class_type || "",
-            payment_status: event.payment_status || "",
+            studentId: event.student_id || event.studentId,
+            student_name_text: event.student_name_text,
+            class_status: event.class_status,
+            class_type: event.class_type,
+            payment_status: event.payment_status,
             originalStart: event.startDate,
             originalEnd: event.endDate,
             timezone: timezone,
@@ -598,42 +600,21 @@ const Calendar: React.FC = () => {
             utcEnd: utcEnd.format(),
             duration: finalEnd.diff(tzStart, "minute"),
             hoursUntilStart: hoursUntilStart,
-            studentId: event.studentId || event.student_id,
-            student_name_text: event.student_name_text,
           },
         };
       });
 
-      console.log("Processed events:", events);
-      console.log("Events count:", events.length);
-      console.log(
-        "📊 Final processed events with teacher data:",
-        events.map((event) => ({
-          id: event.id,
-          title: event.title,
-          teacherId: event.teacherId,
-          teacher_name: event.teacher_name,
-          resourceId: event.resourceId,
-          student_name_text: event.extendedProps?.student_name_text,
-          studentId: event.extendedProps?.studentId,
-          extendedProps: event.extendedProps,
-        }))
-      );
-
+      console.log("Processed events:", events.length);
       setEvents(events);
       setDisplayedEvents(events);
-
-      console.log(
-        "Events state updated. displayedEvents count:",
-        events.length
-      );
-    } catch (error) {
-      console.error("Error fetching events:", error);
-      message.error("Failed to fetch events");
+      setError(null);
+    } catch (err) {
+      console.error("Error fetching events:", err);
+      setError("Failed to fetch events");
     } finally {
       setLoading(false);
     }
-  };
+  }, [teachers, selectedTeacherIds, timezone]);
 
   const checkReservedClasses = async () => {
     try {
@@ -774,7 +755,7 @@ const Calendar: React.FC = () => {
     if (calendarRef.current) {
       fetchEvents();
     }
-  }, [timezone]);
+  }, [timezone]); // Keep only timezone dependency
 
   // Add periodic check for reserved classes
   useEffect(() => {
@@ -795,7 +776,7 @@ const Calendar: React.FC = () => {
     const interval = setInterval(checkReservedClasses, 5 * 60 * 1000);
 
     return () => clearInterval(interval);
-  }, []); // Remove fetchEvents from dependencies since it's defined in component
+  }, []); // Remove fetchEvents from dependencies
 
   // Initial events fetch
   useEffect(() => {
@@ -808,7 +789,7 @@ const Calendar: React.FC = () => {
     };
 
     initializeData();
-  }, []);
+  }, []); // Remove fetchEvents from dependencies
 
   // Update events filtering
   useEffect(() => {
@@ -882,7 +863,131 @@ const Calendar: React.FC = () => {
       console.log("Teachers loaded, refetching events...");
       fetchEvents();
     }
-  }, [teachers]);
+  }, [teachers]); // Keep only teachers dependency
+
+  // Add effect to check for updates from classes page
+  useEffect(() => {
+    let lastCheckTime = Date.now();
+    let isUpdating = false;
+    let updateTimeout: NodeJS.Timeout | null = null;
+
+    const checkForUpdates = async () => {
+      if (isUpdating) {
+        console.log("⏳ Update already in progress, skipping check");
+        return;
+      }
+
+      const lastUpdate = localStorage.getItem("calendarEventsUpdated");
+      const lessonsUpdate = localStorage.getItem("lessonsUpdated");
+      const currentTime = Date.now();
+
+      console.log("🔍 Calendar checking for updates:", {
+        lastUpdate,
+        lessonsUpdate,
+        currentTime,
+        lastCheckTime,
+        timeSinceLastCheck: currentTime - lastCheckTime,
+      });
+
+      // Check if we need to update based on calendar events
+      if (lastUpdate) {
+        const lastUpdateTime = parseInt(lastUpdate);
+        const timeDiff = currentTime - lastUpdateTime;
+
+        console.log("🔍 Calendar update check:", {
+          lastUpdateTime,
+          currentTime,
+          timeDiff,
+          shouldUpdate: timeDiff < 30000, // 30 seconds
+        });
+
+        // If the update was recent (within last 30 seconds), refresh data
+        if (timeDiff < 30000) {
+          console.log("🔄 Calendar events updated, refreshing calendar data");
+          isUpdating = true;
+
+          try {
+            // Clear any existing timeout
+            if (updateTimeout) {
+              clearTimeout(updateTimeout);
+            }
+
+            // Add delay to prevent rapid updates
+            updateTimeout = setTimeout(async () => {
+              await fetchEvents();
+              localStorage.removeItem("calendarEventsUpdated");
+              localStorage.setItem(
+                "calendarLastUpdate",
+                currentTime.toString()
+              );
+              console.log("✅ Calendar events refreshed successfully");
+              isUpdating = false;
+            }, 1000);
+          } catch (error) {
+            console.error("❌ Error refreshing calendar events:", error);
+            isUpdating = false;
+          }
+        }
+      }
+
+      // Check if we need to update based on lessons
+      if (lessonsUpdate) {
+        const lessonsUpdateTime = parseInt(lessonsUpdate);
+        const timeDiff = currentTime - lessonsUpdateTime;
+
+        console.log("🔍 Lessons update check:", {
+          lessonsUpdateTime,
+          currentTime,
+          timeDiff,
+          shouldUpdate: timeDiff < 30000, // 30 seconds
+        });
+
+        // If the lessons update was recent, refresh calendar data
+        if (timeDiff < 30000) {
+          console.log("🔄 Lessons updated, refreshing calendar data");
+          isUpdating = true;
+
+          try {
+            // Clear any existing timeout
+            if (updateTimeout) {
+              clearTimeout(updateTimeout);
+            }
+
+            // Add delay to prevent rapid updates
+            updateTimeout = setTimeout(async () => {
+              await fetchEvents();
+              localStorage.removeItem("lessonsUpdated");
+              localStorage.setItem(
+                "calendarLastUpdate",
+                currentTime.toString()
+              );
+              console.log("✅ Lessons refresh completed successfully");
+              isUpdating = false;
+            }, 1000);
+          } catch (error) {
+            console.error("❌ Error refreshing lessons:", error);
+            isUpdating = false;
+          }
+        }
+      }
+
+      lastCheckTime = currentTime;
+    };
+
+    // Check for updates every 10 seconds for better performance
+    const interval = setInterval(checkForUpdates, 10000);
+
+    // Also check immediately when component mounts
+    checkForUpdates();
+
+    return () => {
+      clearInterval(interval);
+      if (updateTimeout) {
+        clearTimeout(updateTimeout);
+      }
+      console.log("🧹 Calendar sync interval cleared");
+    };
+  }, []); // Remove fetchEvents from dependencies to avoid infinite loops
 
   const handleCreateEvent = async () => {
     try {
@@ -1059,6 +1164,13 @@ const Calendar: React.FC = () => {
         "📢 Calendar events updated notification sent at:",
         new Date().toISOString()
       );
+
+      // Додатково сповіщаємо про оновлення уроків
+      localStorage.setItem("lessonsUpdated", Date.now().toString());
+      window.dispatchEvent(new Event("lessonsUpdate"));
+      console.log("📢 Lessons update notification sent");
+
+      console.log("✅ Event update completed successfully");
     } catch (error: any) {
       console.error("Error creating event:", error);
       message.error(error.message || "Failed to create event");
@@ -1664,6 +1776,11 @@ const Calendar: React.FC = () => {
           "📢 Calendar events updated notification sent at:",
           new Date().toISOString()
         );
+
+        // Додатково сповіщаємо про оновлення уроків
+        localStorage.setItem("lessonsUpdated", Date.now().toString());
+        window.dispatchEvent(new Event("lessonsUpdate"));
+        console.log("📢 Lessons update notification sent");
       }
     } catch (error) {
       console.error("Error deleting event:", error);
@@ -2203,6 +2320,11 @@ const Calendar: React.FC = () => {
         "📢 Calendar events updated notification sent at:",
         new Date().toISOString()
       );
+
+      // Додатково сповіщаємо про оновлення уроків
+      localStorage.setItem("lessonsUpdated", Date.now().toString());
+      window.dispatchEvent(new Event("lessonsUpdate"));
+      console.log("📢 Lessons update notification sent");
     } catch (error) {
       console.error("Error adding unavailable time:", error);
       message.error("Failed to add unavailable time");
