@@ -346,7 +346,7 @@ const ClassManage: React.FC = () => {
           `${lesson.lesson_date}T${lesson.start_time}`,
           DEFAULT_DB_TIMEZONE
         );
-        const userDateTime = dbDateTime.tz(timezone);
+        const userDateTime = dbDateTime;
         setStartTime(userDateTime.format("HH:mm"));
       } else {
         setStartTime("");
@@ -357,7 +357,7 @@ const ClassManage: React.FC = () => {
           `${lesson.lesson_date}T${lesson.end_time}`,
           DEFAULT_DB_TIMEZONE
         );
-        const userDateTime = dbDateTime.tz(timezone);
+        const userDateTime = dbDateTime;
         setEndTime(userDateTime.format("HH:mm"));
       } else {
         setEndTime("");
@@ -448,14 +448,10 @@ const ClassManage: React.FC = () => {
     const csvData = lessons.map((lesson) => {
       // Process calendar link dates with timezone
       const startDate = lesson.CalendarLink?.startDate
-        ? dayjs(lesson.CalendarLink.startDate)
-            .tz(timezone)
-            .format("DD.MM.YYYY HH:mm")
+        ? dayjs(lesson.CalendarLink.startDate).format("DD.MM.YYYY HH:mm")
         : "-";
       const endDate = lesson.CalendarLink?.endDate
-        ? dayjs(lesson.CalendarLink.endDate)
-            .tz(timezone)
-            .format("DD.MM.YYYY HH:mm")
+        ? dayjs(lesson.CalendarLink.endDate).format("DD.MM.YYYY HH:mm")
         : "-";
 
       // Process start time and adjust date if needed
@@ -464,36 +460,12 @@ const ClassManage: React.FC = () => {
       let formattedEndTime = "-";
 
       if (lesson.start_time) {
-        const userStartTime = convertTimeToUserTimezone(
-          lesson.start_time,
-          timezone
-        );
-        if (userStartTime) {
-          formattedStartTime = formatTime(userStartTime, "HH:mm");
-
-          // Adjust date if needed
-          const dayShift = getDayShift(
-            lesson.start_time,
-            DEFAULT_DB_TIMEZONE,
-            timezone
-          );
-          if (dayShift !== 0 && lesson.lesson_date) {
-            adjustedDate = dayjs(lesson.lesson_date)
-              .add(dayShift, "day")
-              .format("YYYY-MM-DD");
-          }
-        }
+        formattedStartTime = formatTime(lesson.start_time, "HH:mm");
       }
 
       // Process end time
       if (lesson.end_time) {
-        const userEndTime = convertTimeToUserTimezone(
-          lesson.end_time,
-          timezone
-        );
-        if (userEndTime) {
-          formattedEndTime = formatTime(userEndTime, "HH:mm");
-        }
+        formattedEndTime = formatTime(lesson.end_time, "HH:mm");
       }
 
       // Format the date in DD.MM.YYYY format
@@ -552,11 +524,7 @@ const ClassManage: React.FC = () => {
       dataIndex: "start_time",
       key: "start_time",
       render: (text, record) => {
-        const userTime = convertTimeToUserTimezone(
-          `${record.lesson_date}T${record.start_time}`,
-          timezone
-        );
-        return userTime ? dayjs(userTime, "HH:mm:ss").format("HH:mm") : "-";
+        return text ? dayjs(`2000-01-01T${text}`).format("HH:mm") : "-";
       },
     },
     {
@@ -564,11 +532,7 @@ const ClassManage: React.FC = () => {
       dataIndex: "end_time",
       key: "end_time",
       render: (text, record) => {
-        const userTime = convertTimeToUserTimezone(
-          `${record.lesson_date}T${record.end_time}`,
-          timezone
-        );
-        return userTime ? dayjs(userTime, "HH:mm:ss").format("HH:mm") : "-";
+        return text ? dayjs(`2000-01-01T${text}`).format("HH:mm") : "-";
       },
     },
     {

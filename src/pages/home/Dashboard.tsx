@@ -198,10 +198,9 @@ export default function Dashboard() {
           lesson.class_type.name === "Trial-Lesson" ||
           lesson.class_type.name === "Regular-Lesson";
 
-        // ONLY count these two specific statuses
+        // ONLY count these two specific statuses (case-insensitive)
         const isValidStatus =
-          lesson.class_status === "Given" ||
-          lesson.class_status === "No show student";
+          isGiven(lesson.class_status) || isNoShowStudent(lesson.class_status);
 
         // Must satisfy BOTH conditions to be counted
         return isValidType && isValidStatus;
@@ -327,29 +326,41 @@ export default function Dashboard() {
           const status = lesson.class_status || "Unknown";
           const key = `${classType}-${status}`;
 
-          if (!classTypeStats[key]) {
-            classTypeStats[key] = {
-              class_type: classType,
-              status: status,
+          // Normalize status for grouping
+          const normalizedStatus = status?.toLowerCase();
+
+          // Find combo with normalized status
+          const combo = CLASS_TYPE_STATUS_COMBOS.find(
+            (c) =>
+              c.type === classType &&
+              c.status.toLowerCase() === normalizedStatus
+          );
+          if (!combo) return; // skip if not a valid combo
+
+          const comboKey = `${combo.type}-${combo.status}`;
+          if (!classTypeStats[comboKey]) {
+            classTypeStats[comboKey] = {
+              class_type: combo.type,
+              status: combo.status,
               total_classes_taught: 0,
               total_salary: 0,
             };
           }
 
-          classTypeStats[key].total_classes_taught += 1;
+          classTypeStats[comboKey].total_classes_taught += 1;
 
           // Calculate salary for this lesson
           const rate = getTeacherRate(teacher, lesson.class_type_id, classType);
           let lessonSalary = rate;
 
-          // Apply status-based adjustments
-          if (status === "No show teacher") {
-            lessonSalary = -rate; // Negative salary for teacher no-show
-          } else if (status === "No show student") {
-            lessonSalary = rate * 0.5; // Half salary for student no-show
+          // Apply status-based adjustments (case-insensitive)
+          if (normalizedStatus === "no show teacher") {
+            lessonSalary = -rate;
+          } else if (normalizedStatus === "no show student") {
+            lessonSalary = rate * 0.5;
           }
 
-          classTypeStats[key].total_salary += lessonSalary;
+          classTypeStats[comboKey].total_salary += lessonSalary;
         });
 
         return {
@@ -1266,3 +1277,12 @@ export default function Dashboard() {
     </motion.div>
   );
 }
+function isGiven(class_status: string) {
+  if (!class_status) return false;
+  return class_status.trim().toLowerCase() === "given";
+}
+function isNoShowStudent(class_status: string): boolean {
+  if (!class_status) return false;
+  return class_status.trim().toLowerCase() === "no show student";
+}
+
