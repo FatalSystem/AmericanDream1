@@ -36,6 +36,28 @@ export const calendarApi = {
     }
   },
 
+  // Create calendar event (alias for createEvent)
+  createCalendar: async (eventData: any) => {
+    try {
+      const response = await api.post("/lessons", eventData);
+      return response.data;
+    } catch (error) {
+      console.error("Error creating calendar event:", error);
+      throw error;
+    }
+  },
+
+  // Get student remaining classes
+  getStudentRemainingClasses: async (studentId: string) => {
+    try {
+      const response = await api.get(`/students/${studentId}/remaining-classes`);
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching student remaining classes:", error);
+      throw error;
+    }
+  },
+
   // Update event (using existing lessons API)
   updateEvent: async (eventData: any) => {
     try {
