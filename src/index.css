@@ -589,3 +589,49 @@ stripe-pricing-table {
   transform: translateY(-1px) !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
 }
+
+.ant-pagination-total-text {
+  color: #fff;
+}
+
+.ant-pagination-item-link svg {
+  fill: #fff;
+}
+
+.ant-pagination-item {
+  border-color: #334155 !important;
+}
+
+.ant-pagination-item a[rel="nofollow"] {
+  background-color: #0f172a !important;
+  color: #fff!important;
+  border-color: none !important;
+}
+
+.ant-pagination-item-active a[rel="nofollow"] {
+  color: #1677ff!important;
+  background-color: #334155!important;
+  border-radius: 0!important;
+}
+
+.ant-pagination-item-ellipsis {
+  color: #fff !important;
+}
+
+.ant-select-selector {
+  background-color: #0f172a!important;
+  color: #fff!important;
+}
+.ant-select-arrow {
+  color: #fff!important;
+}
+
+.ant-pagination-options-quick-jumper {
+  color: #fff!important;
+}
+
+.ant-pagination-options-quick-jumper input {
+  background-color: #0f172a!important;
+  color: #fff!important;
+  border: 1px solid #334155!important;
+}

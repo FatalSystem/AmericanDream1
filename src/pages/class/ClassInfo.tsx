@@ -53,11 +53,13 @@ const ClassInfo: React.FC<{ studentId: string; studentName: string }> = ({
 
   useEffect(() => {
     if (!permissionsLoading) {
-      if (user?.role?.role_name !== "teacher" && !permissions.read) {
-        navigate("/");
-        return;
-      } else if (user?.role?.role_name === "student") {
-        fetchClassInfo(user.id.toString());
+      if (user?.role !== "teacher" && !permissions.read) {
+        navigate("/login");
+        toast.error("You don't have permission to view this page", {
+          theme: "dark",
+        });
+      } else if (user?.role === "student") {
+        fetchClassInfo(user.id);
       }
     }
   }, [permissionsLoading, permissions, navigate, user]);
@@ -102,7 +104,7 @@ const ClassInfo: React.FC<{ studentId: string; studentName: string }> = ({
         canDo: "",
         notes: "",
       },
-      false
+      false,
     );
   };
 
@@ -115,7 +117,7 @@ const ClassInfo: React.FC<{ studentId: string; studentName: string }> = ({
         canDo: record.can_do,
         notes: record.notes || "",
       },
-      true
+      true,
     );
     setEditingRecord(record);
   };
@@ -136,6 +138,7 @@ const ClassInfo: React.FC<{ studentId: string; studentName: string }> = ({
           unit,
           can_do: canDo,
           notes,
+          teacher_id: user?.id,
         });
         setClassInfos(response.data.classInfo);
         toast.success("Class info updated successfully!", { theme: "dark" });
@@ -216,7 +219,7 @@ const ClassInfo: React.FC<{ studentId: string; studentName: string }> = ({
         <span className="font-medium text-gray-900 dark:text-white">{val}</span>
       ),
     },
-    ...(user?.role?.role_name === "teacher"
+    ...(user?.role === "teacher"
       ? [
           {
             title: "Actions",
@@ -252,7 +255,7 @@ const ClassInfo: React.FC<{ studentId: string; studentName: string }> = ({
         title={
           <div className="flex items-center gap-3">
             <span className="text-lg font-semibold text-white">Class</span>
-            <div className="size-2 animate-pulse rounded-full bg-green-400" />
+            <div className="h-2 w-2 animate-pulse rounded-full bg-green-400" />
           </div>
         }
         className="overflow-hidden rounded-xl border-0 shadow-lg transition-shadow hover:shadow-xl"
@@ -269,7 +272,7 @@ const ClassInfo: React.FC<{ studentId: string; studentName: string }> = ({
           maxHeight: "100vh",
         }}
         extra={
-          user?.role?.role_name === "teacher" && (
+          user?.role === "teacher" && (
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
@@ -298,14 +301,7 @@ const ClassInfo: React.FC<{ studentId: string; studentName: string }> = ({
         />
       </Card>
 
-      <AddEditClassModal
-        visible={false}
-        onCancel={() => {}}
-        onSuccess={() => {}}
-        editData={null}
-        teachers={[]}
-        students={[]}
-      />
+      <AddEditClassModal onSubmit={handleSubmit} />
     </motion.div>
   );
 };

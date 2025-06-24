@@ -1,3 +1,5 @@
+@import "../node_modules/@bryntum/calendar/calendar.classic-dark.css";
+
 .calendar-container {
   height: 100vh;
 }
@@ -55,10 +57,21 @@
 }
 
 /* Style for time ranges in calendar */
-.fc-event.not-available-timerange {
+.b-sch-timerange.not-available-timerange {
   background-color: #dc2626 !important;
   border: 2px solid #b91c1c !important;
   color: white !important;
+}
+
+.b-sch-timerange.not-available-timerange .b-sch-timerange-body {
+  background-color: #dc2626 !important;
+  color: white !important;
+}
+
+.b-sch-timerange.not-available-timerange .b-sch-timerange-header {
+  background-color: #b91c1c !important;
+  color: white !important;
+  font-weight: bold !important;
 }
 
 /* Disabled field styles for Unavailable status */
@@ -71,21 +84,32 @@
   &:hover {
     background-color: #f5f5f5 !important;
   }
+  
+  .b-combo-input {
+    background-color: #f5f5f5 !important;
+    color: #999 !important;
+    cursor: not-allowed !important;
+  }
+  
+  .b-combo-trigger {
+    opacity: 0.3 !important;
+    cursor: not-allowed !important;
+  }
 }
 
 /* Unavailable event styling */
 .unavailable-event {
-  background-color: #dc2626 !important;
+  background-color: #9CA3AF !important;
   color: white !important;
-  border: 2px solid #b91c1c !important;
+  border: 2px solid #6B7280 !important;
   font-weight: bold !important;
   text-align: center !important;
-  opacity: 0.9 !important;
+  opacity: 0.7 !important;
 }
 
 .unavailable-event:hover {
-  background-color: #b91c1c !important;
-  opacity: 1 !important;
+  background-color: #6B7280 !important;
+  opacity: 0.8 !important;
 }
 
 /* Hide "All day" field in event editor */
@@ -108,7 +132,7 @@
 }
 
 /* Add style to fix the event editor positioning */
-.event-editor {
+.b-eventeditor {
   position: fixed !important;
   top: 50% !important;
   left: 50% !important;
@@ -119,7 +143,7 @@
 }
 
 /* Ensure the background mask covers the entire viewport */
-.modal-mask {
+.b-mask {
   position: fixed !important;
   top: 0 !important;
   left: 0 !important;

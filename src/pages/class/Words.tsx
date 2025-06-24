@@ -43,15 +43,15 @@ const Words: React.FC<{ studentId: string; studentName: string }> = ({
 
   useEffect(() => {
     if (!permissionsLoading) {
-      if (user?.role?.role_name != "teacher") {
+      if (user?.role != "teacher") {
         if (!permissions.read) {
           navigate("/login");
           toast.error("You don't have permission to view this page", {
             theme: "dark",
           });
         } else {
-          if (user?.role?.role_name === "student") {
-            fetchWords(user.id.toString());
+          if (user?.role === "student") {
+            fetchWords(user.id);
           }
         }
       }
@@ -167,7 +167,7 @@ const Words: React.FC<{ studentId: string; studentName: string }> = ({
       },
     ] as TableColumnsType<any>
   ).concat(
-    user?.role?.role_name === "teacher"
+    user?.role === "teacher"
       ? [
           {
             title: "Date",
@@ -213,7 +213,7 @@ const Words: React.FC<{ studentId: string; studentName: string }> = ({
             },
           },
         ]
-      : []
+      : [],
   );
 
   const handleEdit = (record: any) => {
@@ -236,6 +236,7 @@ const Words: React.FC<{ studentId: string; studentName: string }> = ({
       const response = await api.put(`/words/${editingRecord?.id}`, {
         english_word: english,
         translation_word: translation,
+        teacher_id: user?.id,
       });
 
       setWords(response.data.words);
@@ -294,7 +295,7 @@ const Words: React.FC<{ studentId: string; studentName: string }> = ({
         title={
           <div className="flex items-center gap-3">
             <span className="text-lg font-semibold text-white">Words</span>
-            <div className="size-2 animate-pulse rounded-full bg-green-400" />
+            <div className="h-2 w-2 animate-pulse rounded-full bg-green-400" />
           </div>
         }
         className="overflow-hidden rounded-xl border-0 shadow-lg transition-shadow hover:shadow-xl"
@@ -302,7 +303,7 @@ const Words: React.FC<{ studentId: string; studentName: string }> = ({
         bodyStyle={cardStyles.body}
         extra={
           <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row">
-            {user?.role?.role_name === "teacher" && (
+            {user?.role === "teacher" && (
               <div className="flex flex-col gap-2 xs:flex-row">
                 <motion.button
                   whileHover={{ scale: 1.02 }}

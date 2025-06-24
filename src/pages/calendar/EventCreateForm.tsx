@@ -5,8 +5,7 @@ import "./EventCreateForm.css";
 import { TeacherWithColor } from "../../store/CalendarContext";
 import { DateTime } from "luxon";
 import { toast } from "react-toastify";
-
-console.log("=== EventCreateForm.tsx loaded ===");
+import dayjs from "dayjs";
 
 export type LessonStatus =
   | "scheduled"
@@ -50,8 +49,6 @@ const classTypes = [
   },
   { value: "Group-Lesson", label: "Group", duration: 50 },
   { value: "Makeup-Lesson", label: "Makeup", duration: 50 },
-  { value: "Intensive-Lesson", label: "Intensive", duration: 80 },
-  { value: "Workshop-Lesson", label: "Workshop", duration: 80, isGroup: true },
   {
     value: "Speaking-Club",
     label: "Speaking Club",
@@ -167,13 +164,22 @@ const checkEventOverlap = async (
 
     // Filter events for the same teacher that are not cancelled
     const teacherEvents = response.events.rows.filter((event: any) => {
-      // Ensure we're comparing strings
-      const teacherIdStr = String(teacherId);
-      const eventTeacherId = String(event.teacher_id);
-      const eventResourceId = String(event.resourceId);
+      const eventTeacherIdStr = String(event.teacher_id || event.resourceId);
+      const newEventTeacherIdStr = String(teacherId);
 
-      const isTeacherMatch =
-        eventTeacherId === teacherIdStr || eventResourceId === teacherIdStr;
+      // If the existing event is 'unavailable', only consider it a conflict
+      // if it belongs to the *same* teacher.
+      if (
+        event.class_type === "unavailable" ||
+        event.class_type === "Unavailable"
+      ) {
+        if (eventTeacherIdStr !== newEventTeacherIdStr) {
+          // This is an 'unavailable' block for a *different* teacher, so we can ignore it.
+          return false;
+        }
+      }
+
+      const isTeacherMatch = eventTeacherIdStr === newEventTeacherIdStr;
       const isNotCancelled = !["cancelled", "completed"].includes(
         event.class_status
       );
@@ -186,9 +192,9 @@ const checkEventOverlap = async (
         isNotCancelled,
         hasValidDates,
         isFutureEvent,
-        eventTeacherId,
-        eventResourceId,
-        teacherIdStr,
+        eventTeacherId: event.teacher_id,
+        eventResourceId: event.resourceId,
+        teacherIdStr: newEventTeacherIdStr,
       });
 
       return isTeacherMatch && isNotCancelled && hasValidDates && isFutureEvent;
@@ -357,6 +363,19 @@ export default function EventCreateForm({
   const [students, setStudents] = useState<Student[]>([]);
   const [studentSearch, setStudentSearch] = useState("");
 
+  // Add missing variables
+  const [selectedStudent, setSelectedStudent] = useState<string>("");
+  const [repeatingType, setRepeatingType] = useState<string>("none");
+
+  // Add missing function
+  const getRepeatingData = () => {
+    return {
+      type: repeatingType,
+      days: repeatDays,
+      weeks: repeatWeeks,
+    };
+  };
+
   // Add a separate state for end input display
   const [endInput, setEndInput] = useState(
     defaultEnd ? defaultEnd.toISOString().slice(0, 16) : ""
@@ -441,7 +460,7 @@ export default function EventCreateForm({
     setError(null);
 
     try {
-      // В режимі редагування тільки 3 поля без перевірок
+      // Логіка редагування залишається без змін
       if (isEditMode) {
         if (!start || !end) {
           setLoading(false);
@@ -543,23 +562,10 @@ export default function EventCreateForm({
         return;
       }
 
-      // Оригінальна логіка для створення нової події
-      // Validate required fields
-      console.log("Validating form data:", {
-        start,
-        end,
-      });
-
+      // --- Виправлена логіка створення ---
       if (!initialTeacherId) {
         setLoading(false);
         toast.error("Please select a teacher");
-        return;
-      }
-
-      // For unavailability events, ensure we have a teacher
-      if (initialClassType === "unavailable" && !initialTeacherId) {
-        setLoading(false);
-        toast.error("Teacher is required for unavailability events");
         return;
       }
 
@@ -569,7 +575,6 @@ export default function EventCreateForm({
         return;
       }
 
-      // Convert start and end to UTC for overlap check
       const startUTC =
         DateTime.fromISO(start, { zone: timezone }).toUTC().toISO() || "";
       const endUTC =
@@ -581,243 +586,63 @@ export default function EventCreateForm({
         return;
       }
 
-      // Get all existing events
-      const existingEvents = await calendarApi.getAllEvents();
-      console.log("All events from server:", existingEvents);
-
-      if (!existingEvents?.events?.rows) {
-        throw new Error("Failed to get events");
-      }
-
-      // Check for overlaps
-      const teacherEvents = existingEvents.events.rows.filter((event: any) => {
-        const isTeacherMatch =
-          String(event.resourceId) === String(initialTeacherId) ||
-          String(event.teacher_id) === String(initialTeacherId);
-
-        console.log("Checking event:", {
-          event,
-          teacherId: initialTeacherId,
-          eventTeacherId: event.teacher_id,
-          eventResourceId: event.resourceId,
-          isTeacherMatch,
-          status: event.class_status,
-          startDate: event.startDate,
-          endDate: event.endDate,
-        });
-
-        return (
-          isTeacherMatch &&
-          event.class_status !== "cancelled" &&
-          event.startDate &&
-          event.endDate
-        );
-      });
-
-      console.log("Filtered teacher events:", teacherEvents);
-
-      // Check each event for overlap with 5 minute buffer
-      for (const event of teacherEvents) {
-        const start1 = new Date(startUTC);
-        const end1 = new Date(endUTC);
-        const start2 = new Date(event.startDate);
-        const end2 = new Date(event.endDate);
-
-        console.log("Comparing times:", {
-          newEventStart: start1.toISOString(),
-          newEventEnd: end1.toISOString(),
-          existingEventStart: start2.toISOString(),
-          existingEventEnd: end2.toISOString(),
-        });
-
-        // Simple overlap check without buffer first
-        const hasDirectOverlap = start1 < end2 && end1 > start2;
-
-        // If there's a direct overlap, block immediately
-        if (hasDirectOverlap) {
-          console.log("Direct overlap detected!");
-          setLoading(false);
-          toast.error(
-            `This time slot is already booked. There is a lesson from ${start2.toLocaleTimeString()} to ${end2.toLocaleTimeString()}. Please choose a different time.`
-          );
-          return;
-        }
-
-        // Check buffer zones (5 minutes before and after)
-        const BUFFER_MINUTES = 5;
-        const start1WithBuffer = new Date(
-          start1.getTime() - BUFFER_MINUTES * 60000
-        );
-        const end1WithBuffer = new Date(
-          end1.getTime() + BUFFER_MINUTES * 60000
-        );
-        const start2WithBuffer = new Date(
-          start2.getTime() - BUFFER_MINUTES * 60000
-        );
-        const end2WithBuffer = new Date(
-          end2.getTime() + BUFFER_MINUTES * 60000
-        );
-
-        const hasBufferOverlap =
-          start1WithBuffer < end2WithBuffer &&
-          end1WithBuffer > start2WithBuffer;
-
-        console.log("Overlap check result:", {
-          directOverlap: hasDirectOverlap,
-          bufferOverlap: hasBufferOverlap,
-        });
-
-        if (hasBufferOverlap) {
-          console.log("Buffer overlap detected!");
-          setLoading(false);
-          toast.error(
-            `Cannot create lesson - need at least 5 minutes between lessons. There is a lesson from ${start2.toLocaleTimeString()} to ${end2.toLocaleTimeString()}.`
-          );
-          return;
-        }
-      }
-
-      // If we get here, no overlaps were found
-      // Now proceed with creating the event based on type
-
-      console.log(
-        "Current class type:",
-        classType,
-        "Available types:",
-        classTypes
+      // 1. ЄДИНА ПРАВИЛЬНА ПЕРЕВІРКА НА КОНФЛІКТИ
+      const overlapResult = await checkEventOverlap(
+        initialTeacherId,
+        startUTC,
+        endUTC,
+        timezone
       );
-
-      // Validate class type
-      if (!isValidClassType(classType)) {
+      if (overlapResult.hasOverlap) {
+        const { existingEvent } = overlapResult;
+        const errorMessage = `This time is already occupied by a '${existingEvent.class_type}' event from ${existingEvent.formattedTime}.`;
+        toast.error(errorMessage);
         setLoading(false);
-        toast.error(`Invalid class type: ${classType}`);
         return;
       }
 
-      const classTypeDetails = getClassTypeDetails(classType);
-      console.log("Class type details:", classTypeDetails);
+      // 2. ПОВЕРТАЄМО ЛОГІКУ СТВОРЕННЯ ПОДІЇ
+      const studentId =
+        selectedStudent && selectedStudent !== "group"
+          ? selectedStudent
+          : undefined;
+      let paymentStatusToUse: PaymentStatus = "reserved";
 
-      // If unavailable, skip student/group/payment logic
-      if (!isEditMode && classTypeDetails?.value === "Unavailable-Lesson") {
-        const eventData = {
-          id: initialEventId ? parseInt(initialEventId) : undefined,
-          class_type: classType,
-          student_id: 0,
-          teacher_id: parseInt(String(initialTeacherId)),
-          class_status: "scheduled" as LessonStatus,
-          payment_status: "reserved" as PaymentStatus,
-          start_date: startUTC,
-          end_date: endUTC,
-          duration: Number(duration),
-          isUnavailable: true,
-        };
-
-        await calendarApi.createCalendar(eventData);
-        toast.success("Event created successfully");
-        onClose();
-        if (onSuccess) onSuccess(eventData);
-        return;
-      }
-
-      // For regular lessons, check student balance
-      let paymentStatusToUse = "reserved";
-      if (
-        !isEditMode &&
-        classTypeDetails?.value !== "Group-Lesson" &&
-        studentId
-      ) {
+      if (classType !== "Group-Lesson" && studentId) {
         const balanceRes = await calendarApi.getStudentRemainingClasses(
           studentId.toString()
         );
         const paidCount = balanceRes?.remaining || 0;
-        const isTrial = classTypeDetails?.value === "Trial-Lesson";
+        const isTrial = classType === "Trial-Lesson";
 
-        if (!isTrial) {
-          if (paidCount > 0) {
-            paymentStatusToUse = "paid";
-          } else {
-            const startDateTime = DateTime.fromISO(start, { zone: timezone });
-            const now = DateTime.now().setZone(timezone);
-            const diffHours = startDateTime.diff(now, "hours").hours;
-            if (diffHours < 12) {
-              setLoading(false);
-              toast.error(
-                "Cannot add a lesson for this student less than 12 hours ahead without paid classes."
-              );
-              return;
-            }
-            paymentStatusToUse = "reserved";
-          }
+        if (!isTrial && paidCount > 0) {
+          paymentStatusToUse = "paid";
         }
       }
 
       const eventData = {
-        id: initialEventId ? parseInt(initialEventId) : undefined,
-        class_type: classTypeDetails.value, // Use validated class type
-        student_id:
-          classTypeDetails.value === "Group-Lesson"
-            ? parseInt(selectedGroupId)
-            : parseInt(studentId),
-        resourceId: parseInt(String(initialTeacherId)), // Add resourceId for backend compatibility
+        class_type: classType,
+        student_id: studentId ? parseInt(studentId) : undefined,
         teacher_id: parseInt(String(initialTeacherId)),
-        teacherId: parseInt(String(initialTeacherId)),
+        group_id: selectedGroupId ? parseInt(selectedGroupId) : undefined,
         class_status: classStatus,
         payment_status: paymentStatusToUse,
-        start_date: startUTC,
-        end_date: endUTC,
-        duration: Number(duration),
-        teacher_name: (() => {
-          const teacher = teachers.find(
-            (t) => String(t.id) === String(initialTeacherId)
-          );
-          return teacher
-            ? `${teacher.first_name} ${teacher.last_name}`
-            : undefined;
-        })(),
+        startDate: startUTC,
+        endDate: endUTC,
+        duration: dayjs(end).diff(dayjs(start), "minute"),
+        repeating: repeatingType !== "none" ? getRepeatingData() : undefined,
       };
 
-      // В режимі редагування передаємо тільки змінені поля
-      const finalEventData = isEditMode
-        ? {
-            id: eventData.id,
-            start_date: eventData.start_date,
-            end_date: eventData.end_date,
-            class_status: eventData.class_status,
-          }
-        : eventData;
+      await calendarApi.createCalendar(eventData);
 
-      console.log("Submitting event data:", finalEventData);
-
-      // Якщо є onSuccess, викликаємо його (для режиму редагування)
-      if (onSuccess) {
-        console.log("=== EventCreateForm calling onSuccess ===");
-        console.log("Event data being passed to onSuccess:", finalEventData);
-        console.log("Selected teacher ID:", initialTeacherId);
-        console.log(
-          "Selected teacher object:",
-          teachers.find((t) => String(t.id) === String(initialTeacherId))
-        );
-        onSuccess(finalEventData);
-      } else {
-        // інакше, створюємо нову подію (для режиму створення)
-        await calendarApi.createCalendar(eventData);
-        toast.success("Event created successfully");
-
-        // Notify other components that events have been updated
-        localStorage.setItem("calendarEventsUpdated", Date.now().toString());
-        console.log(
-          "📢 Calendar events updated notification sent from EventCreateForm at:",
-          new Date().toISOString()
-        );
-
-        onClose();
-      }
-    } catch (err) {
-      console.error("Error creating event:", err);
+      toast.success("Event created successfully!");
+      if (onSuccess) onSuccess(eventData);
+      else onClose();
+    } catch (err: any) {
+      console.error("Error in handleSubmit:", err);
+      toast.error(err.message || "Failed to create event.");
+    } finally {
       setLoading(false);
-      toast.error(
-        err instanceof Error ? err.message : "Failed to create event"
-      );
     }
   };
 

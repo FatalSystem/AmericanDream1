@@ -520,7 +520,7 @@ const UserManage: React.FC = () => {
             <span className="text-lg font-semibold text-white">
               User Manage
             </span>
-            <div className="size-2 animate-pulse rounded-full bg-green-400" />
+            <div className="h-2 w-2 animate-pulse rounded-full bg-green-400" />
           </div>
         }
         className="overflow-hidden rounded-xl border-0 shadow-lg transition-shadow hover:shadow-xl"
@@ -552,7 +552,7 @@ const UserManage: React.FC = () => {
             <span className="text-lg font-semibold text-white">
               Permission Manage
             </span>
-            <div className="size-2 animate-pulse rounded-full bg-green-400" />
+            <div className="h-2 w-2 animate-pulse rounded-full bg-green-400" />
           </div>
         }
         className="overflow-hidden rounded-xl border-0 shadow-lg transition-shadow hover:shadow-xl"
@@ -623,16 +623,16 @@ const UserManage: React.FC = () => {
                   ))}
                 </Select>
               </div>
-              <div className="flex flex-col gap-2 pt-4 xs:flex-row">
+              <div className="xs:flex-row flex flex-col gap-2 pt-4">
                 <Button
-                  className="w-full xs:w-auto"
+                  className="xs:w-auto w-full"
                   gradientDuoTone="purpleToBlue"
                   onClick={updateUserRole}
                 >
                   Update
                 </Button>
                 <Button
-                  className="w-full xs:w-auto"
+                  className="xs:w-auto w-full"
                   color="gray"
                   onClick={() => setOpenEditModal(false)}
                 >
@@ -680,16 +680,16 @@ const UserManage: React.FC = () => {
                   </div>
                 ))}
               </div>
-              <div className="flex flex-col gap-2 pt-4 xs:flex-row">
+              <div className="xs:flex-row flex flex-col gap-2 pt-4">
                 <Button
-                  className="w-full xs:w-auto"
+                  className="xs:w-auto w-full"
                   gradientDuoTone="purpleToBlue"
                   onClick={updatePermission}
                 >
                   Update
                 </Button>
                 <Button
-                  className="w-full xs:w-auto"
+                  className="xs:w-auto w-full"
                   color="gray"
                   onClick={() => setOpenPermissionModal(false)}
                 >
@@ -796,16 +796,16 @@ const UserManage: React.FC = () => {
                     ))}
                 </div>
               </div>
-              <div className="flex flex-col gap-2 pt-4 xs:flex-row">
+              <div className="xs:flex-row flex flex-col gap-2 pt-4">
                 <Button
-                  className="w-full xs:w-auto"
+                  className="xs:w-auto w-full"
                   gradientDuoTone="purpleToBlue"
                   onClick={createPermission}
                 >
                   Add Permission
                 </Button>
                 <Button
-                  className="w-full xs:w-auto"
+                  className="xs:w-auto w-full"
                   color="gray"
                   onClick={() => setOpenAddPermissionModal(false)}
                 >
@@ -837,7 +837,7 @@ const UserManage: React.FC = () => {
                   <input
                     type="email"
                     id="email"
-                    className="w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500"
+                    className="w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500"
                     value={newEmail}
                     onChange={(e) => setNewEmail(e.target.value)}
                     required
@@ -881,7 +881,7 @@ const UserManage: React.FC = () => {
                   <input
                     type="password"
                     id="password"
-                    className="w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500"
+                    className="w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     required

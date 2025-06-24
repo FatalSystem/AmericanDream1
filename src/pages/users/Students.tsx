@@ -38,7 +38,7 @@ export default function Students() {
   const [loading, setLoading] = useState(false);
   const [openDrawer, setOpenDrawer] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
-    null
+    null,
   );
 
   const [selectedName, setSelectedName] = useState<string | null>(null);
@@ -51,7 +51,7 @@ export default function Students() {
           theme: "dark",
         });
       } else {
-        if (user?.role?.role_name === "teacher") {
+        if (user?.role === "teacher") {
           fetchSpecifiedStudents();
         } else {
           fetchStudents();
@@ -129,7 +129,7 @@ export default function Students() {
     try {
       await api.delete(`/students/${id}`);
       setStudentData((prevData) =>
-        prevData.filter((student) => student.id !== id)
+        prevData.filter((student) => student.id !== id),
       );
       toast.success("Student deleted successfully!", { theme: "dark" });
     } catch (error: any) {
@@ -168,8 +168,8 @@ export default function Students() {
       // Update the student data by replacing the old student with the updated one
       setStudentData((prevData) =>
         prevData.map((student) =>
-          student.id === selectedStudent.id ? res.data.student : student
-        )
+          student.id === selectedStudent.id ? res.data.student : student,
+        ),
       );
 
       setOpenEditModal(false);
@@ -276,7 +276,7 @@ export default function Students() {
             ),
           },
         ]
-      : []
+      : [],
   );
 
   const simpleColumns: TableColumnsType<any> = [
@@ -291,7 +291,7 @@ export default function Students() {
       ),
       sorter: (a, b) =>
         `${a.first_name} ${a.last_name}`.localeCompare(
-          `${b.first_name} ${b.last_name}`
+          `${b.first_name} ${b.last_name}`,
         ),
     },
     {
@@ -346,7 +346,7 @@ export default function Students() {
         title={
           <div className="z-150 flex items-center gap-3">
             <span className="text-lg font-semibold text-white">Students</span>
-            <div className="size-2 animate-pulse rounded-full bg-green-400" />
+            <div className="h-2 w-2 animate-pulse rounded-full bg-green-400" />
           </div>
         }
         className="overflow-hidden rounded-xl border-0 shadow-lg transition-shadow hover:shadow-xl"
@@ -354,7 +354,7 @@ export default function Students() {
         bodyStyle={cardStyles.body}
         extra={
           <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row">
-            {user?.role?.role_name !== "teacher" && permissions.create && (
+            {user?.role !== "teacher" && permissions.create && (
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -375,7 +375,7 @@ export default function Students() {
         }
       >
         <div className="custom-table overflow-hidden rounded-lg shadow-md">
-          {user?.role?.role_name === "teacher" ? (
+          {user?.role === "teacher" ? (
             <>
               <Table
                 className="custom-table"
@@ -519,16 +519,16 @@ export default function Students() {
               />
             </div>
 
-            <div className="flex flex-col gap-2 pt-4 xs:flex-row">
+            <div className="xs:flex-row flex flex-col gap-2 pt-4">
               <Button
-                className="w-full xs:w-auto"
+                className="xs:w-auto w-full"
                 gradientDuoTone="purpleToBlue"
                 onClick={createData}
               >
                 Add Student
               </Button>
               <Button
-                className="w-full xs:w-auto"
+                className="xs:w-auto w-full"
                 color="gray"
                 onClick={() => setOpenModal(false)}
               >
@@ -618,16 +618,16 @@ export default function Students() {
                 />
               </div>
 
-              <div className="flex flex-col gap-2 pt-4 xs:flex-row">
+              <div className="xs:flex-row flex flex-col gap-2 pt-4">
                 <Button
-                  className="w-full xs:w-auto"
+                  className="xs:w-auto w-full"
                   gradientDuoTone="purpleToBlue"
                   onClick={updateStudent}
                 >
                   Update Student
                 </Button>
                 <Button
-                  className="w-full xs:w-auto"
+                  className="xs:w-auto w-full"
                   color="gray"
                   onClick={() => setOpenEditModal(false)}
                 >

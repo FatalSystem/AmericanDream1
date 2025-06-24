@@ -8,54 +8,8 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.extend(customParseFormat);
 
-// Default timezone is UTC (database timezone)
-export const DEFAULT_DB_TIMEZONE = 'UTC';
-
-interface TimezoneInfo {
-  value: string;
-  label: string;
-  offset: number;
-}
-
-export const getTimezones = (): TimezoneInfo[] => {
-  const timezones = dayjs.tz.guess();
-  const currentOffset = dayjs.tz(timezones).utcOffset();
-
-  return [
-    {
-      value: timezones,
-      label: `${timezones} (UTC${formatOffset(currentOffset)})`,
-      offset: currentOffset,
-    },
-    {
-      value: 'America/Los_Angeles',
-      label: `America/Los_Angeles (UTC${formatOffset(dayjs.tz('America/Los_Angeles').utcOffset())})`,
-      offset: dayjs.tz('America/Los_Angeles').utcOffset(),
-    },
-    {
-      value: 'Europe/London',
-      label: `Europe/London (UTC${formatOffset(dayjs.tz('Europe/London').utcOffset())})`,
-      offset: dayjs.tz('Europe/London').utcOffset(),
-    },
-    {
-      value: 'Europe/Paris',
-      label: `Europe/Paris (UTC${formatOffset(dayjs.tz('Europe/Paris').utcOffset())})`,
-      offset: dayjs.tz('Europe/Paris').utcOffset(),
-    },
-    {
-      value: 'Asia/Tokyo',
-      label: `Asia/Tokyo (UTC${formatOffset(dayjs.tz('Asia/Tokyo').utcOffset())})`,
-      offset: dayjs.tz('Asia/Tokyo').utcOffset(),
-    },
-  ];
-};
-
-const formatOffset = (offset: number): string => {
-  const hours = Math.floor(Math.abs(offset) / 60);
-  const minutes = Math.abs(offset) % 60;
-  const sign = offset >= 0 ? '+' : '-';
-  return `${sign}${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-};
+// Default timezone is PST (database timezone)
+export const DEFAULT_DB_TIMEZONE = 'America/Los_Angeles'; // PST
 
 /**
  * Convert a date string from database timezone to user timezone

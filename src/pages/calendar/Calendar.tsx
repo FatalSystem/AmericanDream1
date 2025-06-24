@@ -26,7 +26,6 @@ import {
 import { PlusOutlined } from "@ant-design/icons";
 import api from "../../config";
 import { calendarApi } from "../../api/calendar";
-import CreateEventModal from "../../components/CreateEventModal";
 import "./Calendar.css";
 import dayjs from "dayjs";
 import timezone from "dayjs/plugin/timezone";
@@ -97,6 +96,7 @@ interface EventExtendedProps {
   utcEnd?: string;
   duration?: number;
   hoursUntilStart?: number;
+  isNotAvailable?: boolean;
 }
 
 // Use FullCalendar's native types
@@ -111,14 +111,7 @@ interface CustomEventInput extends EventInput {
   resourceId?: string;
   teacherId?: string;
   teacher_name?: string;
-  extendedProps?: {
-    teacherId?: string;
-    teacher_name?: string;
-    studentId?: string;
-    student_name_text?: string;
-    class_status?: string;
-    class_type?: string;
-  };
+  extendedProps?: EventExtendedProps;
 }
 
 type CalendarEvent = CustomEventInput & {
@@ -157,7 +150,19 @@ const classTypes = [
 ];
 
 const convertToTimezone = (dateStr: string, targetTimezone: string): string => {
-  const date = dayjs.tz(dateStr, "UTC");
+  // Check if the date string is already in UTC format (contains 'Z' or 'T' with timezone offset)
+  let date;
+  if (
+    dateStr.includes("Z") ||
+    (dateStr.includes("T") && (dateStr.includes("+") || dateStr.includes("-")))
+  ) {
+    // Already in UTC format, parse directly
+    date = dayjs(dateStr);
+  } else {
+    // Assume it's in UTC format without timezone indicator
+    date = dayjs.utc(dateStr);
+  }
+
   return date.tz(targetTimezone).format();
 };
 
@@ -165,7 +170,8 @@ const convertToTimezone = (dateStr: string, targetTimezone: string): string => {
 const isTimeSlotBusy = async (
   start: string,
   end: string,
-  userTimezone: string
+  userTimezone: string,
+  teacherId?: string | number,
 ): Promise<boolean> => {
   try {
     const response = await api.get("/calendar/events");
@@ -176,23 +182,78 @@ const isTimeSlotBusy = async (
     console.log("🔍 Total events to check:", events.length);
 
     // Convert input times to UTC for comparison
-    // The input times are in user timezone, so we need to parse them correctly
     const newStart = dayjs.tz(start, userTimezone).utc();
     const newEnd = dayjs.tz(end, userTimezone).utc();
 
     console.log("🔍 Checking time slot:", {
       inputStart: start,
       inputEnd: end,
+      teacherId,
       convertedStart: newStart.format("YYYY-MM-DD HH:mm:ss"),
       convertedEnd: newEnd.format("YYYY-MM-DD HH:mm:ss"),
       timezone: userTimezone,
-      dbTimezone: DEFAULT_DB_TIMEZONE,
     });
 
     for (const event of events) {
+      // Skip cancelled events
       if (event.class_status === "cancelled") {
         console.log("⏭️ Skipping cancelled event:", event.id);
         continue;
+      }
+
+      // If teacherId is provided, only check conflicts for the same teacher
+      if (teacherId) {
+        const eventTeacherIdStr = String(event.teacher_id || event.resourceId);
+        const newEventTeacherIdStr = String(teacherId);
+
+        // If the existing event is 'unavailable', only consider it a conflict
+        // if it belongs to the *same* teacher
+        if (
+          event.class_type === "unavailable" ||
+          event.class_type === "Unavailable" ||
+          event.class_status === "Unavailable" ||
+          event.class_status === "unavailable" ||
+          event.class_status === "Not Available" ||
+          event.isNotAvailable === true ||
+          event.title === "Unavailable"
+        ) {
+          console.log("🔍 Found unavailable event:", {
+            eventId: event.id,
+            eventTeacherId: eventTeacherIdStr,
+            newEventTeacherId: newEventTeacherIdStr,
+            isSameTeacher: eventTeacherIdStr === newEventTeacherIdStr,
+            class_type: event.class_type,
+            class_status: event.class_status,
+            isNotAvailable: event.isNotAvailable,
+          });
+
+          if (eventTeacherIdStr !== newEventTeacherIdStr) {
+            // This is an 'unavailable' block for a *different* teacher, so we can ignore it
+            console.log(
+              "⏭️ Skipping unavailable event for different teacher:",
+              {
+                eventId: event.id,
+                eventTeacherId: eventTeacherIdStr,
+                newEventTeacherId: newEventTeacherIdStr,
+              },
+            );
+            continue;
+          } else {
+            console.log(
+              "⚠️ Found unavailable event for SAME teacher - this should block creation!",
+            );
+          }
+        }
+
+        // Only check events for the same teacher
+        if (eventTeacherIdStr !== newEventTeacherIdStr) {
+          console.log("⏭️ Skipping event for different teacher:", {
+            eventId: event.id,
+            eventTeacherId: eventTeacherIdStr,
+            newEventTeacherId: newEventTeacherIdStr,
+          });
+          continue;
+        }
       }
 
       console.log("🔍 Processing event:", {
@@ -201,6 +262,7 @@ const isTimeSlotBusy = async (
         endDate: event.endDate,
         class_status: event.class_status,
         class_type: event.class_type,
+        teacher_id: event.teacher_id,
       });
 
       // Events from database are already in UTC
@@ -235,7 +297,7 @@ const isTimeSlotBusy = async (
       if (partialOverlap) {
         console.log(
           "❌ Time slot is busy! Overlap detected with event:",
-          event.id
+          event.id,
         );
         console.log("Overlap type:", {
           hasOverlap,
@@ -256,17 +318,14 @@ const isTimeSlotBusy = async (
 
 const Calendar: React.FC = () => {
   const { timezone } = useTimezone();
-  const [events, setEvents] = useState<CustomEventInput[]>([]);
-  const [displayedEvents, setDisplayedEvents] = useState<CustomEventInput[]>(
-    []
-  );
-  const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [displayedEvents, setDisplayedEvents] = useState<CalendarEvent[]>([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isAvailabilityModalOpen, setIsAvailabilityModalOpen] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isAvailabilityModalOpen, setIsAvailabilityModalOpen] = useState(false);
   const [selectedTeacherIds, setSelectedTeacherIds] = useState<number[]>([]);
   const [availabilityForm, setAvailabilityForm] = useState({
     teacherId: null as number | null,
@@ -300,6 +359,7 @@ const Calendar: React.FC = () => {
   const calendarRef = useRef<any>(null);
   const [editEventData, setEditEventData] = useState<EventDetails | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isEditEventOpen, setIsEditEventOpen] = useState(false);
 
   // Log timezone information
   console.log("🌍 Timezone Info:", {
@@ -335,7 +395,7 @@ const Calendar: React.FC = () => {
       console.log("Processed teachers array:", arr);
       console.log(
         "Teachers with ID 82:",
-        arr.filter((t) => t.id === 82 || String(t.id) === "82")
+        arr.filter((t) => t.id === 82 || String(t.id) === "82"),
       );
 
       // Log all teachers for debugging
@@ -346,7 +406,7 @@ const Calendar: React.FC = () => {
           name: `${t.first_name} ${t.last_name}`,
           first_name: t.first_name,
           last_name: t.last_name,
-        }))
+        })),
       );
 
       setTeachers(arr);
@@ -394,9 +454,7 @@ const Calendar: React.FC = () => {
 
     try {
       console.log("Fetching calendar events...");
-      console.log("Current teachers count:", teachers.length);
 
-      // If teachers are not loaded yet, wait a bit and try again
       if (teachers.length === 0) {
         setTimeout(() => fetchEvents(), 100);
         return;
@@ -411,15 +469,11 @@ const Calendar: React.FC = () => {
         .tz(DEFAULT_DB_TIMEZONE)
         .format("YYYY-MM-DDTHH:mm:ss");
 
-      console.log("Fetch period:", { startDate, endDate, selectedTeacherIds });
-
-      // Формуємо параметри запиту
       const params: any = {
         start: startDate,
         end: endDate,
       };
 
-      // Додаємо teacherId тільки якщо є вибрані вчителі
       if (selectedTeacherIds.length > 0) {
         params.teacherId = selectedTeacherIds.join(",");
       }
@@ -433,45 +487,109 @@ const Calendar: React.FC = () => {
         },
       });
 
-      console.log("Raw events data:", response.data);
+      console.log("📥 Full API response:", response.data);
+      console.log("📊 Response structure:", {
+        isArray: Array.isArray(response.data),
+        hasEvents: !!response.data.events,
+        eventsType: typeof response.data.events,
+        hasRows: !!response.data.events?.rows,
+        rowsLength: response.data.events?.rows?.length,
+      });
 
       let eventsArray = Array.isArray(response.data)
         ? response.data
         : response.data.events?.rows || [];
 
-      console.log("Processing events:", eventsArray.length);
-      console.log("📊 Raw events array sample:", eventsArray.slice(0, 3));
-      console.log(
-        "🔍 Raw events with teacher data:",
-        eventsArray.map((event) => ({
-          id: event.id,
-          teacher_id: event.teacher_id,
-          teacherId: event.teacherId,
-          resourceId: event.resourceId,
-          teacher_name: event.teacher_name,
-          teacherName: event.teacherName,
-        }))
-      );
+      console.log("📋 Final events array:", eventsArray);
+      console.log("📊 Events array length:", eventsArray.length);
 
-      // Let the backend handle reserved class checks
       await api.get("/calendar/check-reserved");
 
       const events = eventsArray.map((event: any) => {
-        console.log("🔍 Processing event from database:", {
+        console.log("🔍 Processing event:", {
           id: event.id,
-          name: event.name,
-          title: event.title,
-          student_name_text: event.student_name_text,
-          resourceId: event.resourceId,
-          teacherId: event.teacherId,
-          teacher_id: event.teacher_id,
-          teacher_name: event.teacher_name,
-          teacherName: event.teacherName,
           class_type: event.class_type,
           class_status: event.class_status,
-          payment_status: event.payment_status,
+          teacher_id: event.teacher_id,
+          resourceId: event.resourceId,
+          teacherId: event.teacherId,
         });
 
+        // *** ВИПРАВЛЕННЯ: Спеціальна обробка для unavailable подій ***
+        const isUnavailableEvent =
+          event.class_type === "Unavailable" ||
+          event.class_type === "unavailable" ||
+          event.class_status === "Unavailable" ||
+          event.class_status === "unavailable" ||
+          event.class_status === "Not Available";
+
+        if (isUnavailableEvent) {
+          console.log("🚫 Processing UNAVAILABLE event:", event.id);
+
+          // Для unavailable подій обов'язково знаходимо teacherId
+          const teacherId =
+            event.teacher_id || event.resourceId || event.teacherId;
+
+          const teacher = teachers.find(
+            (t) => String(t.id) === String(teacherId),
+          );
+          const teacherName = teacher
+            ? `${teacher.first_name} ${teacher.last_name}`
+            : event.teacher_name || "Unknown Teacher";
+
+          console.log("🚫 Unavailable event teacher info:", {
+            teacherId,
+            teacher,
+            teacherName,
+          });
+
+          // Convert times
+          const utcStart = dayjs.utc(event.startDate);
+          const utcEnd = event.endDate
+            ? dayjs.utc(event.endDate)
+            : utcStart.add(8, "hour"); // Дефолтна тривалість для unavailable
+
+          const tzStart = utcStart.tz(timezone);
+          const tzEnd = utcEnd.tz(timezone);
+
+          console.log("🚫 Time conversion for UNAVAILABLE event:", event.id, {
+            originalStartDate: event.startDate,
+            originalEndDate: event.endDate,
+            utcStart: utcStart.format("YYYY-MM-DD HH:mm:ss"),
+            utcEnd: utcEnd.format("YYYY-MM-DD HH:mm:ss"),
+            tzStart: tzStart.format("YYYY-MM-DD HH:mm:ss"),
+            tzEnd: tzEnd.format("YYYY-MM-DD HH:mm:ss"),
+            userTimezone: timezone,
+            dbTimezone: DEFAULT_DB_TIMEZONE,
+          });
+
+          return {
+            id: String(event.id),
+            title: "Unavailable", // *** ЗАВЖДИ "Unavailable" ***
+            start: tzStart.format("YYYY-MM-DDTHH:mm:ss"),
+            end: tzEnd.format("YYYY-MM-DDTHH:mm:ss"),
+            allDay: false,
+            backgroundColor: "#d32f2f", // *** ЗАВЖДИ ЧЕРВОНИЙ ***
+            borderColor: "#d32f2f",
+            resourceId: teacherId,
+            teacherId: String(teacherId),
+            teacher_name: teacherName,
+            extendedProps: {
+              teacherId: String(teacherId),
+              teacher_name: teacherName,
+              class_status: "Unavailable", // *** ЗАВЖДИ Unavailable ***
+              class_type: "Unavailable", // *** ЗАВЖДИ Unavailable ***
+              isNotAvailable: true, // *** ВАЖЛИВИЙ ФЛАГ ***
+              originalStart: event.startDate,
+              originalEnd: event.endDate,
+              timezone: timezone,
+              utcStart: tzStart.format(),
+              utcEnd: tzEnd.format(),
+            },
+          };
+        }
+
+        // *** Звичайна обробка для інших подій ***
         let title = event.name || event.title || event.student_name_text || "";
 
         // Handle reserved lessons
@@ -489,90 +607,69 @@ const Calendar: React.FC = () => {
           title = `Trial - ${studentName}`;
         }
 
-        // Try to get teacherId from multiple sources, prioritizing resourceId
         const teacherId =
           event.resourceId || event.teacherId || event.teacher_id;
-        console.log("Processing event:", event.id, "teacherId:", teacherId);
 
-        // Try to find teacher by ID first
         let teacher = teachers.find((t) => String(t.id) === String(teacherId));
-        console.log("Found teacher by ID:", teacher);
 
-        // Log the search details
-        console.log("🔍 Teacher search details:", {
-          eventId: event.id,
-          teacherId: teacherId,
-          teachersCount: teachers.length,
-          teacherIds: teachers.map((t) => t.id),
-          searchString: String(teacherId),
-          foundTeacher: teacher,
-        });
-
-        // If no teacher found by ID but we have a name, try to find by name
         if (
           !teacher &&
           event.teacher_name &&
           event.teacher_name !== "Unknown Teacher"
         ) {
           teacher = teachers.find(
-            (t) => `${t.first_name} ${t.last_name}` === event.teacher_name
+            (t) => `${t.first_name} ${t.last_name}` === event.teacher_name,
           );
-          console.log("Found teacher by name:", teacher);
         }
 
-        // Additional fallback: try to find teacher by any available field
-        if (!teacher) {
-          // Try to find by teacherId field if it's different from resourceId
-          if (event.teacherId && event.teacherId !== event.resourceId) {
-            teacher = teachers.find(
-              (t) => String(t.id) === String(event.teacherId)
-            );
-            console.log("Found teacher by teacherId fallback:", teacher);
-          }
-
-          // Try to find by teacher_id field if it's different from resourceId
-          if (
-            !teacher &&
-            event.teacher_id &&
-            event.teacher_id !== event.resourceId
-          ) {
-            teacher = teachers.find(
-              (t) => String(t.id) === String(event.teacher_id)
-            );
-            console.log("Found teacher by teacher_id fallback:", teacher);
-          }
-        }
-
-        // Set default teacher name if no teacher found
         const teacherName = teacher
           ? `${teacher.first_name} ${teacher.last_name}`
           : event.teacher_name || "No Teacher Assigned";
 
         const finalTeacherId = teacher ? String(teacher.id) : teacherId;
 
-        console.log("Final teacher info:", {
-          id: finalTeacherId,
-          name: teacherName,
-          originalTeacherId: teacherId,
-          foundTeacher: teacher,
+        // Convert times - робимо так само, як в Class Manage
+        // Беремо час безпосередньо з бази даних без додаткової конвертації
+        let tzStart, tzEnd;
+
+        try {
+          // Парсимо час без додаткової конвертації часових зон
+          tzStart = dayjs(event.startDate);
+          tzEnd = event.endDate
+            ? dayjs(event.endDate)
+            : tzStart.add(50, "minute");
+
+          console.log("🕐 Time parsing for event:", event.id, {
+            originalStartDate: event.startDate,
+            originalEndDate: event.endDate,
+            parsedStart: tzStart.format("YYYY-MM-DD HH:mm:ss"),
+            parsedEnd: tzEnd.format("YYYY-MM-DD HH:mm:ss"),
+            userTimezone: timezone,
+          });
+        } catch (error) {
+          console.error("Error parsing time for event:", event.id, error);
+          // Fallback до старого методу
+          const utcStart = dayjs.utc(event.startDate);
+          const utcEnd = event.endDate
+            ? dayjs.utc(event.endDate)
+            : utcStart.add(50, "minute");
+          tzStart = utcStart.tz(timezone);
+          tzEnd = utcEnd.tz(timezone);
+        }
+
+        console.log("🕐 Time conversion for event:", event.id, {
+          originalStartDate: event.startDate,
+          originalEndDate: event.endDate,
+          tzStart: tzStart.format("YYYY-MM-DD HH:mm:ss"),
+          tzEnd: tzEnd.format("YYYY-MM-DD HH:mm:ss"),
+          userTimezone: timezone,
+          dbTimezone: DEFAULT_DB_TIMEZONE,
         });
 
-        // First convert to UTC
-        const utcStart = dayjs.utc(event.startDate);
-        const utcEnd = event.endDate
-          ? dayjs.utc(event.endDate)
-          : utcStart.add(50, "minute");
-
-        // Then convert to selected timezone
-        const tzStart = utcStart.tz(timezone);
-        const tzEnd = utcEnd.tz(timezone);
-
-        // Ensure end time is after start time
         const finalEnd = tzEnd.isBefore(tzStart)
           ? tzStart.add(50, "minute")
           : tzEnd;
 
-        // Calculate hours until start for validation
         const hoursUntilStart = tzStart.diff(dayjs(), "hour");
 
         return {
@@ -582,7 +679,7 @@ const Calendar: React.FC = () => {
           end: finalEnd.format("YYYY-MM-DDTHH:mm:ss"),
           allDay: false,
           backgroundColor: event.eventColor || event.teacherColor,
-          resourceId: teacherId, // Keep original resourceId
+          resourceId: teacherId,
           teacherId: finalTeacherId,
           teacher_name: teacherName,
           extendedProps: {
@@ -596,8 +693,8 @@ const Calendar: React.FC = () => {
             originalStart: event.startDate,
             originalEnd: event.endDate,
             timezone: timezone,
-            utcStart: utcStart.format(),
-            utcEnd: utcEnd.format(),
+            utcStart: tzStart.format(),
+            utcEnd: tzEnd.format(),
             duration: finalEnd.diff(tzStart, "minute"),
             hoursUntilStart: hoursUntilStart,
           },
@@ -605,8 +702,110 @@ const Calendar: React.FC = () => {
       });
 
       console.log("Processed events:", events.length);
-      setEvents(events);
-      setDisplayedEvents(events);
+      console.log(
+        "🚫 Unavailable events found:",
+        events.filter((e) => e.extendedProps?.isNotAvailable).length,
+      );
+
+      // Додаткове логування для діагностики
+      const unavailableEvents = events.filter(
+        (e) => e.extendedProps?.isNotAvailable,
+      );
+      console.log(
+        "🚫 Unavailable events details:",
+        unavailableEvents.map((e) => ({
+          id: e.id,
+          title: e.title,
+          start: e.start,
+          end: e.end,
+          class_status: e.extendedProps?.class_status,
+          class_type: e.extendedProps?.class_type,
+          teacher_name: e.extendedProps?.teacher_name,
+          teacherId: e.extendedProps?.teacherId,
+        })),
+      );
+
+      // *** ВИПРАВЛЕННЯ: Зберігаємо локальні зміни unavailable подій ***
+      setEvents((currentEvents) => {
+        const updatedEvents = events.map((newEvent) => {
+          // Шукаємо відповідну подію в поточному стані
+          const existingEvent = currentEvents.find((e) => e.id === newEvent.id);
+
+          // Якщо це unavailable подія і вона існує в поточному стані
+          if (newEvent.extendedProps?.isNotAvailable && existingEvent) {
+            // Перевіряємо, чи є локальні зміни
+            const hasLocalChanges =
+              existingEvent.start !== newEvent.start ||
+              existingEvent.end !== newEvent.end;
+
+            if (hasLocalChanges) {
+              console.log(
+                "🔄 Preserving local changes for unavailable event:",
+                {
+                  id: newEvent.id,
+                  localStart: existingEvent.start,
+                  localEnd: existingEvent.end,
+                  serverStart: newEvent.start,
+                  serverEnd: newEvent.end,
+                },
+              );
+
+              // Повертаємо локальну версію з серверними даними
+              return {
+                ...newEvent,
+                start: existingEvent.start,
+                end: existingEvent.end,
+              };
+            }
+          }
+
+          return newEvent;
+        });
+
+        return updatedEvents;
+      });
+
+      setDisplayedEvents((currentDisplayedEvents) => {
+        const updatedDisplayedEvents = events.map((newEvent) => {
+          // Шукаємо відповідну подію в поточному стані
+          const existingEvent = currentDisplayedEvents.find(
+            (e) => e.id === newEvent.id,
+          );
+
+          // Якщо це unavailable подія і вона існує в поточному стані
+          if (newEvent.extendedProps?.isNotAvailable && existingEvent) {
+            // Перевіряємо, чи є локальні зміни
+            const hasLocalChanges =
+              existingEvent.start !== newEvent.start ||
+              existingEvent.end !== newEvent.end;
+
+            if (hasLocalChanges) {
+              console.log(
+                "🔄 Preserving local changes for displayed unavailable event:",
+                {
+                  id: newEvent.id,
+                  localStart: existingEvent.start,
+                  localEnd: existingEvent.end,
+                  serverStart: newEvent.start,
+                  serverEnd: newEvent.end,
+                },
+              );
+
+              // Повертаємо локальну версію з серверними даними
+              return {
+                ...newEvent,
+                start: existingEvent.start,
+                end: existingEvent.end,
+              };
+            }
+          }
+
+          return newEvent;
+        });
+
+        return updatedDisplayedEvents;
+      });
+
       setError(null);
     } catch (err) {
       console.error("Error fetching events:", err);
@@ -622,7 +821,7 @@ const Calendar: React.FC = () => {
       const currentTimeInUserTz = dayjs().tz(timezone);
       console.log(
         "🕐 Current time in user timezone:",
-        currentTimeInUserTz.format("YYYY-MM-DD HH:mm:ss")
+        currentTimeInUserTz.format("YYYY-MM-DD HH:mm:ss"),
       );
       console.log("🕐 User timezone:", timezone);
 
@@ -656,7 +855,7 @@ const Calendar: React.FC = () => {
           title: event.title,
           start: startTime.format("YYYY-MM-DD HH:mm:ss"),
           currentTimeInUserTz: currentTimeInUserTz.format(
-            "YYYY-MM-DD HH:mm:ss"
+            "YYYY-MM-DD HH:mm:ss",
           ),
           hoursUntilStart: hoursUntilStart,
           classStatus: classStatus,
@@ -679,7 +878,7 @@ const Calendar: React.FC = () => {
             start: dayjs(event.start).format("YYYY-MM-DD HH:mm:ss"),
             status: (event.extendedProps as EventExtendedProps)?.class_status,
             reason: "Less than 12 hours until start",
-          }))
+          })),
         );
 
         // Delete each event from backend
@@ -694,14 +893,14 @@ const Calendar: React.FC = () => {
 
         // Update frontend state
         const updatedEvents = events.filter(
-          (event) => !eventsToDelete.some((e) => e.id === event.id)
+          (event) => !eventsToDelete.some((e) => e.id === event.id),
         );
 
         setEvents(updatedEvents);
         setDisplayedEvents(updatedEvents);
 
         message.success(
-          `Removed ${eventsToDelete.length} expired reserved classes`
+          `Removed ${eventsToDelete.length} expired reserved classes`,
         );
       }
 
@@ -728,9 +927,9 @@ const Calendar: React.FC = () => {
             status: (event.extendedProps as EventExtendedProps)?.class_status,
             hoursUntilStart: dayjs(event.start).diff(
               currentTimeInUserTz,
-              "hour"
+              "hour",
             ),
-          }))
+          })),
         );
       }
     } catch (error) {
@@ -796,12 +995,13 @@ const Calendar: React.FC = () => {
     if (selectedTeacherIds.length > 0) {
       const filteredEvents = events.filter((event) => {
         const eventTeacherId = Number(
-          event.teacherId || event.extendedProps?.teacherId
+          event.teacherId || event.extendedProps?.teacherId,
         );
         return selectedTeacherIds.includes(eventTeacherId);
       });
       setDisplayedEvents(filteredEvents);
     } else {
+      // Показуємо всі події, включаючи завершені (Given)
       setDisplayedEvents(events);
     }
   }, [selectedTeacherIds, events]);
@@ -811,7 +1011,7 @@ const Calendar: React.FC = () => {
     if (teachers.length > 0 && selectedTeacherIds.length === 0) {
       // Спробуємо завантажити збережений стан з localStorage
       const savedTeacherIds = localStorage.getItem(
-        "calendarSelectedTeacherIds"
+        "calendarSelectedTeacherIds",
       );
       if (savedTeacherIds) {
         try {
@@ -820,14 +1020,14 @@ const Calendar: React.FC = () => {
           setSelectedTeacherIds(parsedIds);
         } catch (error) {
           console.log(
-            "🎯 Failed to parse saved teacher selection, defaulting to 'All Teachers'"
+            "🎯 Failed to parse saved teacher selection, defaulting to 'All Teachers'",
           );
           setSelectedTeacherIds([]);
         }
       } else {
         // За замовчуванням вибираємо всіх вчителів (порожній масив означає "All Teachers")
         console.log(
-          "🎯 Initializing teachers selection - defaulting to 'All Teachers'"
+          "🎯 Initializing teachers selection - defaulting to 'All Teachers'",
         );
         setSelectedTeacherIds([]);
         // Зберігаємо початковий стан в localStorage
@@ -841,7 +1041,7 @@ const Calendar: React.FC = () => {
     if (teachers.length > 0) {
       localStorage.setItem(
         "calendarSelectedTeacherIds",
-        JSON.stringify(selectedTeacherIds)
+        JSON.stringify(selectedTeacherIds),
       );
       console.log("🎯 Teacher selection state saved:", selectedTeacherIds);
     }
@@ -852,7 +1052,7 @@ const Calendar: React.FC = () => {
     return () => {
       // Не очищаємо localStorage при розмонтуванні, щоб зберегти стан
       console.log(
-        "🎯 Calendar component unmounted, teacher selection preserved"
+        "🎯 Calendar component unmounted, teacher selection preserved",
       );
     };
   }, []);
@@ -918,7 +1118,7 @@ const Calendar: React.FC = () => {
               localStorage.removeItem("calendarEventsUpdated");
               localStorage.setItem(
                 "calendarLastUpdate",
-                currentTime.toString()
+                currentTime.toString(),
               );
               console.log("✅ Calendar events refreshed successfully");
               isUpdating = false;
@@ -959,7 +1159,7 @@ const Calendar: React.FC = () => {
               localStorage.removeItem("lessonsUpdated");
               localStorage.setItem(
                 "calendarLastUpdate",
-                currentTime.toString()
+                currentTime.toString(),
               );
               console.log("✅ Lessons refresh completed successfully");
               isUpdating = false;
@@ -1009,7 +1209,7 @@ const Calendar: React.FC = () => {
       if (eventForm.studentId) {
         try {
           const response = await api.get(
-            `/students/${eventForm.studentId}/remaining-classes`
+            `/students/${eventForm.studentId}/remaining-classes`,
           );
           const remainingClasses = response.data.remainingClasses || 0;
           paymentStatus = remainingClasses > 0 ? "paid" : "reserved";
@@ -1029,10 +1229,24 @@ const Calendar: React.FC = () => {
         });
 
         // Перевіряємо чи час зайнятий
-        const isBusy = await isTimeSlotBusy(start, end, timezone);
+        console.log(
+          "🔍 Checking if time slot is busy for teacher:",
+          eventForm.teacherId,
+        );
+        const isBusy = await isTimeSlotBusy(
+          start,
+          end,
+          timezone,
+          eventForm.teacherId,
+        );
+        console.log("🔍 isTimeSlotBusy result:", isBusy);
+
         if (isBusy) {
+          console.log("❌ Time slot is busy - throwing error");
           throw new Error("This time is already occupied by another event.");
         }
+
+        console.log("✅ Time slot is free - proceeding with event creation");
 
         // Додаємо логування для діагностики
         console.log("🔍 Creating event with times:");
@@ -1051,12 +1265,12 @@ const Calendar: React.FC = () => {
 
         console.log(
           "Start in user timezone:",
-          startInUserTz.format("YYYY-MM-DD HH:mm:ss")
+          startInUserTz.format("YYYY-MM-DD HH:mm:ss"),
         );
         console.log("Start in UTC:", startInUtc.format("YYYY-MM-DD HH:mm:ss"));
         console.log(
           "End in user timezone:",
-          endInUserTz.format("YYYY-MM-DD HH:mm:ss")
+          endInUserTz.format("YYYY-MM-DD HH:mm:ss"),
         );
         console.log("End in UTC:", endInUtc.format("YYYY-MM-DD HH:mm:ss"));
 
@@ -1081,6 +1295,16 @@ const Calendar: React.FC = () => {
             added: [eventData],
           },
         });
+
+        console.log("✅ Event created successfully:", {
+          eventId: response.data?.id,
+          savedStartDate: eventData.startDate,
+          savedEndDate: eventData.endDate,
+          originalUserStart: start,
+          originalUserEnd: end,
+          userTimezone: timezone,
+        });
+
         return response.data;
       };
 
@@ -1106,11 +1330,12 @@ const Calendar: React.FC = () => {
           const isBusy = await isTimeSlotBusy(
             slot.start.format("YYYY-MM-DDTHH:mm:ss"),
             slot.end.format("YYYY-MM-DDTHH:mm:ss"),
-            timezone
+            timezone,
+            eventForm.teacherId,
           );
           if (isBusy) {
             throw new Error(
-              `Час ${slot.start.format("DD.MM.YYYY HH:mm")} вже зайнятий`
+              `Час ${slot.start.format("DD.MM.YYYY HH:mm")} вже зайнятий`,
             );
           }
         }
@@ -1119,7 +1344,7 @@ const Calendar: React.FC = () => {
         for (const slot of slots) {
           await createSingleEvent(
             slot.start.format("YYYY-MM-DDTHH:mm:ss"),
-            slot.end.format("YYYY-MM-DDTHH:mm:ss")
+            slot.end.format("YYYY-MM-DDTHH:mm:ss"),
           );
         }
       }
@@ -1162,8 +1387,12 @@ const Calendar: React.FC = () => {
       localStorage.setItem("calendarEventsUpdated", Date.now().toString());
       console.log(
         "📢 Calendar events updated notification sent at:",
-        new Date().toISOString()
+        new Date().toISOString(),
       );
+
+      // Додатково сповіщаємо через postMessage
+      window.postMessage({ type: "calendarEventsUpdated" }, "*");
+      console.log("📢 Calendar events updated via postMessage");
 
       // Додатково сповіщаємо про оновлення уроків
       localStorage.setItem("lessonsUpdated", Date.now().toString());
@@ -1206,7 +1435,8 @@ const Calendar: React.FC = () => {
       const isBusy = await isTimeSlotBusy(
         selectInfo.start,
         selectInfo.end,
-        timezone
+        timezone,
+        eventForm.teacherId,
       );
 
       if (isBusy) {
@@ -1234,7 +1464,7 @@ const Calendar: React.FC = () => {
       // Check student's remaining classes
       if (eventForm.studentId) {
         const response = await api.get(
-          `/students/${eventForm.studentId}/remaining-classes`
+          `/students/${eventForm.studentId}/remaining-classes`,
         );
         const remainingClasses = response.data.remainingClasses || 0;
 
@@ -1300,7 +1530,7 @@ const Calendar: React.FC = () => {
     console.log("Modal state changed:", isCreateModalOpen);
   }, [isCreateModalOpen]);
 
-  // Додамо функцію для визначення кольору тексту залежно від фону
+  // Додаємо функцію для визначення кольору тексту залежно від фону
   const getContrastColor = (bgColor: string) => {
     // Якщо колір не вказано, повертаємо чорний
     if (!bgColor) return "#000000";
@@ -1334,9 +1564,42 @@ const Calendar: React.FC = () => {
 
   // Proper unavailable event check
   const isUnavailableEvent = (event: any) => {
-    // Check if this is an unavailable event by class_type
-    const classType = event.extendedProps?.class_type;
-    return classType === "Unavailable" || classType === "unavailable";
+    // Перевіряємо різні джерела даних про тип події
+    const classType =
+      event.extendedProps?.class_type ||
+      event.class_type ||
+      event._def?.extendedProps?.class_type;
+
+    const classStatus =
+      event.extendedProps?.class_status ||
+      event.class_status ||
+      event._def?.extendedProps?.class_status;
+
+    const isNotAvailable =
+      event.extendedProps?.isNotAvailable ||
+      event.isNotAvailable ||
+      event._def?.extendedProps?.isNotAvailable;
+
+    console.log("🔍 Checking if event is unavailable:", {
+      eventId: event.id,
+      classType,
+      classStatus,
+      isNotAvailable,
+      title: event.title,
+    });
+
+    // Перевіряємо по різних критеріях
+    const result =
+      classType === "Unavailable" ||
+      classType === "unavailable" ||
+      classStatus === "Unavailable" ||
+      classStatus === "unavailable" ||
+      classStatus === "Not Available" ||
+      isNotAvailable === true ||
+      event.title === "Unavailable";
+
+    console.log("🔍 isUnavailableEvent result:", result);
+    return result;
   };
 
   // Update events processing to handle unavailable events
@@ -1345,9 +1608,10 @@ const Calendar: React.FC = () => {
       const isUnavailable = isUnavailableEvent(event);
       const processedEvent = {
         ...event,
-        editable: !isUnavailable,
-        startEditable: !isUnavailable,
-        durationEditable: !isUnavailable,
+        // Дозволяємо перетягувати unavailable події для зміни часу
+        editable: true,
+        startEditable: true,
+        durationEditable: true,
       };
 
       // Convert times if they exist
@@ -1371,40 +1635,45 @@ const Calendar: React.FC = () => {
       (event.extendedProps as EventExtendedProps)?.payment_status || "";
     const teacherName = event.extendedProps?.teacher_name;
 
+    // *** ВАЖЛИВА ПЕРЕВІРКА: Чи це unavailable подія ***
+    const isNotAvailable = isUnavailableEvent(event);
+
     console.log("🎨 Rendering event:", {
       id: event.id,
       title: event.title,
       teacherName: teacherName,
-      teacherId: event.extendedProps?.teacherId,
       classType: classType,
       paymentStatus: paymentStatus,
+      isNotAvailable: isNotAvailable,
       extendedProps: event.extendedProps,
     });
 
-    // Format time in selected timezone
+    // Format time
     const startTime = dayjs(event.start).format("HH:mm");
     const endTime = dayjs(event.end).format("HH:mm");
 
-    console.log("🕐 Time formatting:", {
-      eventStart: event.start,
-      eventEnd: event.end,
-      startTime,
-      endTime,
-      timezone,
-    });
-
-    const isNotAvailable = isUnavailableEvent(event);
-
-    // Use the full title without removing RSVR prefix
-    const displayTitle = event.title;
-
-    const classTypeDisplay =
-      classTypes.find((type) => type.value === classType)?.label || classType;
-
     let backgroundColor;
+    let displayTitle;
+    let classTypeDisplay;
+
     if (isNotAvailable) {
-      backgroundColor = "#d32f2f"; // Always red for unavailable events
+      // *** ДЛЯ UNAVAILABLE ПОДІЙ ***
+      backgroundColor = "#d32f2f"; // Завжди червоний
+      displayTitle = "Unavailable";
+      classTypeDisplay = "Unavailable";
+
+      console.log("🚫 Rendering UNAVAILABLE event:", {
+        id: event.id,
+        backgroundColor,
+        displayTitle,
+        teacherName,
+      });
     } else {
+      // *** ДЛЯ ЗВИЧАЙНИХ ПОДІЙ ***
+      displayTitle = event.title;
+      classTypeDisplay =
+        classTypes.find((type) => type.value === classType)?.label || classType;
+
       switch (classType.toLowerCase()) {
         case "trial":
           backgroundColor = "#ff9800";
@@ -1421,11 +1690,11 @@ const Calendar: React.FC = () => {
         default:
           backgroundColor = event.backgroundColor || "#2196f3";
       }
-    }
 
-    // Adjust opacity for reserved classes (but not for unavailable events)
-    if (paymentStatus === "reserved" && !isNotAvailable) {
-      backgroundColor = backgroundColor + "99"; // Add 60% opacity
+      // Adjust opacity for reserved classes
+      if (paymentStatus === "reserved") {
+        backgroundColor = backgroundColor + "99"; // Add 60% opacity
+      }
     }
 
     const textColor = "#ffffff";
@@ -1445,7 +1714,7 @@ const Calendar: React.FC = () => {
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
-          alignItems: "flex-start", // Changed from center to flex-start for left alignment
+          alignItems: "flex-start",
           boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
           borderRadius: "3px",
           position: "absolute",
@@ -1461,11 +1730,11 @@ const Calendar: React.FC = () => {
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
-            alignItems: "flex-start", // Changed from center to flex-start for left alignment
+            alignItems: "flex-start",
             width: "100%",
             height: "100%",
-            padding: "4px 8px", // Added left padding for better spacing
-            textAlign: "left", // Changed from center to left
+            padding: "4px 8px",
+            textAlign: "left",
           }}
         >
           <div
@@ -1482,8 +1751,10 @@ const Calendar: React.FC = () => {
               width: "100%",
             }}
           >
-            {isNotAvailable ? "Unavailable" : classTypeDisplay}
+            {classTypeDisplay}
           </div>
+
+          {/* *** ПОКАЗУЄМО ІМ'Я СТУДЕНТА АБО ВЧИТЕЛЯ *** */}
           {!isNotAvailable && displayTitle && (
             <div
               style={{
@@ -1501,6 +1772,26 @@ const Calendar: React.FC = () => {
               {displayTitle}
             </div>
           )}
+
+          {/* *** ДЛЯ UNAVAILABLE ПОКАЗУЄМО ІМ'Я ВЧИТЕЛЯ *** */}
+          {isNotAvailable && teacherName && (
+            <div
+              style={{
+                fontSize: "11px",
+                fontWeight: "500",
+                color: textColor,
+                lineHeight: "1.1",
+                marginBottom: "2px",
+                whiteSpace: "normal",
+                overflow: "hidden",
+                wordBreak: "break-word",
+                width: "100%",
+              }}
+            >
+              {teacherName}
+            </div>
+          )}
+
           <div
             style={{
               fontSize: "9px",
@@ -1555,111 +1846,211 @@ const Calendar: React.FC = () => {
 
     setEventDetails(eventDetailsData);
     setStatusValue(
-      mapServerStatus(eventDetailsData.class_status || "scheduled")
+      mapServerStatus(eventDetailsData.class_status || "scheduled"),
     );
+    // Якщо unavailable - відкриваємо тільки time edit modal
+    if (isNotAvailable) {
+      setIsEditingStatus(false);
+      setIsEventDetailsOpen(true);
+      return;
+    }
     setIsEventDetailsOpen(true);
   };
 
+  // Замініть функцію handleSaveEvent на цю виправлену версію:
+
   const handleSaveEvent = async (eventId: string) => {
+    console.log("🚀 handleSaveEvent START - Function called!");
+    console.log("🚀 handleSaveEvent - eventId:", eventId);
+    console.log("🚀 handleSaveEvent - eventDetails:", eventDetails);
+    console.log("🚀 handleSaveEvent - statusValue:", statusValue);
+
     try {
       console.log("🔧 handleSaveEvent called with:", {
         eventId,
         statusValue,
         eventDetails,
-        originalStatus: eventDetails?.class_status,
-        mappedStatus: statusValue,
         isNotAvailable: eventDetails?.isNotAvailable,
       });
 
       if (eventDetails?.isNotAvailable) {
-        // For unavailable events, update the time using the calendarApi
-        // Convert times to UTC for the API
-        const startUTC = dayjs
-          .tz(eventDetails.start, timezone)
-          .utc()
-          .format("YYYY-MM-DDTHH:mm:ss");
-        const endUTC = dayjs
-          .tz(eventDetails.end, timezone)
-          .utc()
-          .format("YYYY-MM-DDTHH:mm:ss");
+        // *** ВИПРАВЛЕННЯ: Для unavailable подій оновлюємо ЧАС, а не статус ***
+
+        // Перевіряємо, чи змінилися час
+        const originalEvent = events.find((e) => e.id === eventId);
+        if (!originalEvent) {
+          message.error("Event not found");
+          return;
+        }
+
+        const hasTimeChanged =
+          originalEvent.start !== eventDetails.start ||
+          originalEvent.end !== eventDetails.end;
+
+        if (!hasTimeChanged) {
+          console.log("⏭️ No time changes detected, closing modal");
+          setEventDetails(null);
+          setIsEventDetailsOpen(false);
+          setIsEditingStatus(false);
+          return;
+        }
+
+        // *** ВИПРАВЛЕННЯ: Правильна конвертація часових зон ***
+        let startUTC, endUTC;
+
+        try {
+          // Спочатку парсимо дату в локальному часовому поясі
+          const startDate = dayjs(eventDetails.start);
+          const endDate = dayjs(eventDetails.end);
+
+          // Перевіряємо валідність дат
+          if (!startDate.isValid() || !endDate.isValid()) {
+            message.error("Invalid date format");
+            return;
+          }
+
+          // Конвертуємо в UTC
+          startUTC = startDate.tz(timezone).utc().format("YYYY-MM-DDTHH:mm:ss");
+          endUTC = endDate.tz(timezone).utc().format("YYYY-MM-DDTHH:mm:ss");
+
+          console.log("🕐 Time conversion:", {
+            originalStart: eventDetails.start,
+            originalEnd: eventDetails.end,
+            startUTC,
+            endUTC,
+            timezone,
+          });
+        } catch (error) {
+          console.error("❌ Error converting timezone:", error);
+          message.error("Error processing time format");
+          return;
+        }
 
         const updateData = {
-          id: eventId,
-          start: startUTC, // Змінено з start_date на start
-          end: endUTC, // Змінено з end_date на end
-          class_status: statusValue,
-          class_type: eventDetails.class_type || "Unavailable",
-          teacher_id: eventDetails.teacherId,
+          id: parseInt(eventId),
+          start_date: startUTC,
+          end_date: endUTC,
+          // *** ВАЖЛИВО: Зберігаємо unavailable статус ***
+          class_status: "Unavailable",
+          class_type: "Unavailable",
+          teacher_id: parseInt(String(eventDetails.teacherId)),
         };
 
-        console.log("🔄 Updating unavailable event with:", {
+        console.log("🔄 Updating unavailable event TIME with:", {
           originalStart: eventDetails.start,
           originalEnd: eventDetails.end,
-          convertedStart: startUTC,
-          convertedEnd: endUTC,
-          timezone: timezone,
+          startUTC,
+          endUTC,
           updateData,
         });
 
-        const response = await calendarApi.updateCalendarEvent(updateData);
+        try {
+          // *** ВИКОРИСТОВУЄМО звичайний API для оновлення часу unavailable події ***
+          console.log("📤 Sending request to update unavailable event with:", {
+            eventId: parseInt(eventId),
+            updateData,
+          });
 
-        console.log(
-          "✅ handleSaveEvent - Response for unavailable event:",
-          response
-        );
+          // Використовуємо PUT /calendar/events/{id} замість /complete
+          const response = await api.put(
+            `/calendar/events/${eventId}`,
+            updateData,
+          );
 
-        // Додаткове логування для відстеження
-        console.log("🔄 After API call - checking if event was updated...");
+          console.log("✅ Unavailable event time updated:", response);
+          console.log("📊 Response data:", response.data);
+          message.success("Unavailable time updated successfully");
 
-        message.success("Unavailable time slot updated successfully");
+          // *** ВИПРАВЛЕННЯ: Оновлюємо FullCalendar подію НЕМЕДЛЕННО ***
+          if (calendarRef.current) {
+            const calendarApi = calendarRef.current.getApi();
+            const fcEvent = calendarApi.getEventById(eventId);
+            if (fcEvent) {
+              fcEvent.setStart(eventDetails.start);
+              fcEvent.setEnd(eventDetails.end);
+              fcEvent.setExtendedProp("class_type", "Unavailable");
+              fcEvent.setExtendedProp("class_status", "Unavailable");
+              fcEvent.setExtendedProp("isNotAvailable", true);
+              fcEvent.setProp("backgroundColor", "#d32f2f");
+              console.log("✅ FullCalendar event updated in place");
+            }
+          }
 
-        console.log("Save event request details:", {
-          eventId: eventId,
-          statusValue: statusValue,
-          endpoint:
-            "POST /calendar/events (via calendarApi.updateCalendarEvent)",
-          requestBody: updateData,
-        });
+          // *** ВИПРАВЛЕННЯ: Оновлюємо локальний стан з правильними даними ***
+          const updatedEvent = {
+            ...originalEvent,
+            start: eventDetails.start,
+            end: eventDetails.end,
+            backgroundColor: "#d32f2f",
+            extendedProps: {
+              ...originalEvent.extendedProps,
+              class_type: "Unavailable",
+              class_status: "Unavailable",
+              isNotAvailable: true,
+            },
+          };
+
+          setEvents((prevEvents) =>
+            prevEvents.map((event) =>
+              event.id === eventId ? updatedEvent : event,
+            ),
+          );
+
+          // *** ОНОВЛЮЄМО displayedEvents ***
+          setDisplayedEvents((prevEvents) =>
+            prevEvents.map((event) =>
+              event.id === eventId ? updatedEvent : event,
+            ),
+          );
+
+          // *** ЗАКРИВАЄМО МОДАЛКУ ***
+          setEventDetails(null);
+          setIsEventDetailsOpen(false);
+          setIsEditingStatus(false);
+
+          // *** ВИПРАВЛЕННЯ: НЕ викликаємо fetchEvents взагалі для unavailable подій ***
+          // Локальні зміни вже оновлені, сервер також оновлений
+          // fetchEvents буде викликано тільки при зміні сторінки або часового поясу
+          console.log(
+            "✅ Unavailable event updated - no fetchEvents called to prevent overwrite",
+          );
+
+          // *** Сповіщаємо інші компоненти ***
+          localStorage.setItem("calendarEventsUpdated", Date.now().toString());
+          console.log("✅ Unavailable event time update completed");
+          return;
+        } catch (error) {
+          console.error("❌ Error updating unavailable event time:", error);
+          console.error("❌ Error details:", {
+            message: error.message,
+            response: error.response?.data,
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+          });
+          message.error(
+            `Failed to update unavailable time: ${
+              error.response?.data?.message || error.message
+            }`,
+          );
+          return;
+        }
       } else {
-        // Check if trying to set status to "Given" for a student
         const isBeingMarkedAsGiven =
           statusValue === "Given" || statusValue === "given";
         const hasStudent = eventDetails?.studentId;
 
-        console.log("🔍 Checking lesson status change conditions:", {
-          isBeingMarkedAsGiven,
-          hasStudent,
-          studentId: eventDetails?.studentId,
-          currentStatus: eventDetails?.class_status,
-          newStatus: statusValue,
-        });
-
-        // If trying to mark as "Given" and has a student, check if student has paid lessons
         if (isBeingMarkedAsGiven && hasStudent) {
           try {
-            console.log(
-              "🔍 Checking student's remaining classes before setting 'Given' status..."
-            );
             const studentResponse = await api.get(
-              `/students/${hasStudent}/remaining-classes`
+              `/students/${hasStudent}/remaining-classes`,
             );
             const remainingClasses = studentResponse.data.remainingClasses || 0;
 
-            console.log("🔍 Student remaining classes:", {
-              studentId: hasStudent,
-              remainingClasses,
-              canSetGiven: remainingClasses > 0,
-            });
-
-            // If student has no paid classes, prevent setting status to "Given"
             if (remainingClasses <= 0) {
-              console.log(
-                "❌ Cannot set status to 'Given' - student has no paid classes"
-              );
               message.error(
-                "Cannot mark lesson as 'Given' - student has no paid classes"
+                "Cannot mark lesson as 'Given' - student has no paid classes",
               );
-              return; // Exit early - prevent status change
+              return;
             }
           } catch (error) {
             console.error("Error checking student's remaining classes:", error);
@@ -1668,74 +2059,24 @@ const Calendar: React.FC = () => {
           }
         }
 
-        // Use PATCH /calendar/events/:id/status for updating only event status
+        // *** Використовуємо PATCH для оновлення тільки статусу ***
         const response = await api.patch(`/calendar/events/${eventId}/status`, {
           class_status: statusValue,
         });
 
-        console.log("✅ handleSaveEvent - Response:", response.data);
+        console.log("✅ Regular event status updated:", response.data);
         message.success("Event status updated successfully");
 
-        console.log("Save event request details:", {
-          eventId: eventId,
-          statusValue: statusValue,
-          endpoint: `/calendar/events/${eventId}/status`,
-          requestBody: { class_status: statusValue },
-        });
-      }
+        setEventDetails(null);
+        setIsEventDetailsOpen(false);
+        setIsEditingStatus(false);
 
-      setEventDetails(null);
-      setIsEventDetailsOpen(false);
-      setIsEditingStatus(false); // Reset editing status
+        // *** Оновлюємо події після зміни статусу ***
+        await fetchEvents();
+        updateDisplayedEvents();
 
-      // Clear events state first
-      console.log("🧹 Clearing events state...");
-      setEvents([]);
-      setDisplayedEvents([]);
-
-      // Wait a bit for state to clear
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // Refresh events to show updated status
-      console.log("🔄 Refreshing events...");
-      await fetchEvents();
-
-      // Force FullCalendar to refresh
-      if (calendarRef.current) {
-        console.log("🔄 Forcing FullCalendar refresh...");
-        const calendarApi = calendarRef.current.getApi();
-        calendarApi.refetchEvents();
-
-        // Also try to rerender the calendar
-        setTimeout(() => {
-          calendarApi.render();
-          console.log("🔄 Calendar re-rendered");
-        }, 200);
-      }
-
-      // Helper function to update displayedEvents based on current filters
-      console.log("🔄 Updating displayed events...");
-      updateDisplayedEvents();
-
-      // Notify other components that events have been updated
-      localStorage.setItem("calendarEventsUpdated", Date.now().toString());
-      console.log(
-        "📢 Calendar events updated notification sent at:",
-        new Date().toISOString()
-      );
-
-      console.log("✅ Event update completed successfully");
-
-      // Додаткове оновлення для unavailable events
-      if (eventDetails?.isNotAvailable) {
-        console.log("🔄 Additional refresh for unavailable event...");
-        setTimeout(async () => {
-          await fetchEvents();
-          if (calendarRef.current) {
-            const calendarApi = calendarRef.current.getApi();
-            calendarApi.refetchEvents();
-          }
-        }, 500);
+        // *** Сповіщаємо інші компоненти ***
+        localStorage.setItem("calendarEventsUpdated", Date.now().toString());
       }
     } catch (error) {
       console.error("❌ Error updating event:", error);
@@ -1754,7 +2095,7 @@ const Calendar: React.FC = () => {
 
         // Immediately remove the deleted event from displayed events
         setDisplayedEvents((prev) =>
-          prev.filter((event) => event.id !== eventId)
+          prev.filter((event) => event.id !== eventId),
         );
         setEvents((prev) => prev.filter((event) => event.id !== eventId));
 
@@ -1774,7 +2115,7 @@ const Calendar: React.FC = () => {
         localStorage.setItem("calendarEventsUpdated", Date.now().toString());
         console.log(
           "📢 Calendar events updated notification sent at:",
-          new Date().toISOString()
+          new Date().toISOString(),
         );
 
         // Додатково сповіщаємо про оновлення уроків
@@ -1816,7 +2157,7 @@ const Calendar: React.FC = () => {
       const filtered = students.filter(
         (student) =>
           student.first_name.toLowerCase().startsWith(search) ||
-          student.last_name.toLowerCase().startsWith(search)
+          student.last_name.toLowerCase().startsWith(search),
       );
       console.log("filtered students (first letter):", filtered);
       return filtered;
@@ -1831,7 +2172,7 @@ const Calendar: React.FC = () => {
           .includes(search) ||
         `${student.first_name} ${student.last_name}`
           .toLowerCase()
-          .includes(searchText.toLowerCase())
+          .includes(searchText.toLowerCase()),
     );
     console.log("filtered students:", filtered);
     return filtered;
@@ -1879,7 +2220,7 @@ const Calendar: React.FC = () => {
     // If no teacherId, try to find by teacher name
     if (!teacherId && eventDetails.teacher_name) {
       const teacher = teachers.find(
-        (t) => `${t.first_name} ${t.last_name}` === eventDetails.teacher_name
+        (t) => `${t.first_name} ${t.last_name}` === eventDetails.teacher_name,
       );
       if (teacher) {
         teacherId = String(teacher.id);
@@ -1942,17 +2283,17 @@ const Calendar: React.FC = () => {
           studentId: editEventData?.studentId,
           currentStatus: editEventData?.class_status,
           newStatus: updatedData.class_status,
-        }
+        },
       );
 
       // If trying to mark as "Given" and has a student, check if student has paid lessons
       if (isBeingMarkedAsGiven && hasStudent) {
         try {
           console.log(
-            "🔍 handleUpdateEvent - Checking student's remaining classes before setting 'Given' status..."
+            "🔍 handleUpdateEvent - Checking student's remaining classes before setting 'Given' status...",
           );
           const studentResponse = await api.get(
-            `/students/${hasStudent}/remaining-classes`
+            `/students/${hasStudent}/remaining-classes`,
           );
           const remainingClasses = studentResponse.data.remainingClasses || 0;
 
@@ -1965,10 +2306,10 @@ const Calendar: React.FC = () => {
           // If student has no paid classes, prevent setting status to "Given"
           if (remainingClasses <= 0) {
             console.log(
-              "❌ handleUpdateEvent - Cannot set status to 'Given' - student has no paid classes"
+              "❌ handleUpdateEvent - Cannot set status to 'Given' - student has no paid classes",
             );
             message.error(
-              "Cannot mark lesson as 'Given' - student has no paid classes"
+              "Cannot mark lesson as 'Given' - student has no paid classes",
             );
             return; // Exit early - prevent status change
           }
@@ -1999,7 +2340,18 @@ const Calendar: React.FC = () => {
         start_date: updatedData.start_date,
         end_date: updatedData.end_date,
         class_status: updatedData.class_status,
+        class_type: updatedData.class_type || editEventData?.class_type,
+        teacher_id: teacherId ? parseInt(teacherId) : undefined,
       };
+
+      // Для unavailable подій зберігаємо статус
+      if (
+        editEventData?.isNotAvailable ||
+        updatedData.class_type === "Unavailable"
+      ) {
+        eventDataForUpdate.class_status = "Unavailable";
+        eventDataForUpdate.class_type = "Unavailable";
+      }
 
       console.log("📤 Final event data for update:", eventDataForUpdate);
       console.log("🔍 Teacher ID details:", {
@@ -2009,16 +2361,11 @@ const Calendar: React.FC = () => {
         parsedTeacherId: teacherId ? parseInt(teacherId) : undefined,
       });
 
-      // Use POST /calendar/events for updating events
-      const requestData = {
-        events: {
-          updated: [eventDataForUpdate],
-        },
-      };
-
-      console.log("📡 Sending update request:", requestData);
-
-      const response = await api.post("/calendar/events", requestData);
+      // Use PUT /calendar/events/{id} for updating events
+      const response = await api.put(
+        `/calendar/events/${updatedData.id}`,
+        eventDataForUpdate,
+      );
 
       console.log("✅ Update response:", response.data);
       console.log("🔍 Response details:", {
@@ -2041,10 +2388,29 @@ const Calendar: React.FC = () => {
       localStorage.setItem("calendarEventsUpdated", Date.now().toString());
       console.log(
         "📢 Calendar events updated notification sent at:",
-        new Date().toISOString()
+        new Date().toISOString(),
       );
 
       message.success("Event updated successfully");
+
+      // Оновлюємо локальний стан події для unavailable подій
+      if (
+        editEventData?.isNotAvailable ||
+        updatedData.class_type === "Unavailable"
+      ) {
+        const calendarApi = calendarRef.current?.getApi();
+        if (calendarApi) {
+          const event = calendarApi.getEventById(updatedData.id);
+          if (event) {
+            event.setExtendedProp("class_type", "Unavailable");
+            event.setExtendedProp("class_status", "Unavailable");
+            event.setExtendedProp("isNotAvailable", true);
+            console.log(
+              "✅ Local event updated with unavailable properties after edit",
+            );
+          }
+        }
+      }
     } catch (error) {
       console.error("❌ Error updating event:", error);
       message.error("Failed to update event");
@@ -2056,7 +2422,8 @@ const Calendar: React.FC = () => {
     start: string,
     end: string,
     userTimezone: string,
-    excludeEventId: string | number
+    excludeEventId: string | number,
+    teacherId?: string | number,
   ): Promise<boolean> => {
     try {
       const response = await api.get("/calendar/events");
@@ -2074,6 +2441,7 @@ const Calendar: React.FC = () => {
         inputStart: start,
         inputEnd: end,
         excludeEventId: excludeEventId,
+        teacherId,
         convertedStart: newStart.format("YYYY-MM-DD HH:mm:ss"),
         convertedEnd: newEnd.format("YYYY-MM-DD HH:mm:ss"),
         timezone: userTimezone,
@@ -2091,12 +2459,51 @@ const Calendar: React.FC = () => {
           continue;
         }
 
+        // If teacherId is provided, only check conflicts for the same teacher
+        if (teacherId) {
+          const eventTeacherIdStr = String(
+            event.teacher_id || event.resourceId,
+          );
+          const newEventTeacherIdStr = String(teacherId);
+
+          // If the existing event is 'unavailable', only consider it a conflict
+          // if it belongs to the *same* teacher
+          if (
+            event.class_type === "unavailable" ||
+            event.class_type === "Unavailable"
+          ) {
+            if (eventTeacherIdStr !== newEventTeacherIdStr) {
+              // This is an 'unavailable' block for a *different* teacher, so we can ignore it
+              console.log(
+                "⏭️ Skipping unavailable event for different teacher:",
+                {
+                  eventId: event.id,
+                  eventTeacherId: eventTeacherIdStr,
+                  newEventTeacherId: newEventTeacherIdStr,
+                },
+              );
+              continue;
+            }
+          }
+
+          // Only check events for the same teacher
+          if (eventTeacherIdStr !== newEventTeacherIdStr) {
+            console.log("⏭️ Skipping event for different teacher:", {
+              eventId: event.id,
+              eventTeacherId: eventTeacherIdStr,
+              newEventTeacherId: newEventTeacherIdStr,
+            });
+            continue;
+          }
+        }
+
         console.log("🔍 Processing event (excluding check):", {
           id: event.id,
           startDate: event.startDate,
           endDate: event.endDate,
           class_status: event.class_status,
           class_type: event.class_type,
+          teacher_id: event.teacher_id,
         });
 
         // Events from database are already in UTC
@@ -2131,7 +2538,7 @@ const Calendar: React.FC = () => {
         if (partialOverlap) {
           console.log(
             "❌ Time slot is busy! Overlap detected with event:",
-            event.id
+            event.id,
           );
           console.log("Overlap type:", {
             hasOverlap,
@@ -2160,25 +2567,13 @@ const Calendar: React.FC = () => {
     if (selectedTeacherIds.length > 0) {
       const filteredEvents = events.filter((event) => {
         const eventTeacherId = Number(
-          event.teacherId || event.extendedProps?.teacherId
+          event.teacherId || event.extendedProps?.teacherId,
         );
-        const isIncluded = selectedTeacherIds.includes(eventTeacherId);
-
-        console.log("🔍 Filtering event:", {
-          id: event.id,
-          title: event.title,
-          eventTeacherId: eventTeacherId,
-          isIncluded: isIncluded,
-          teacherName: event.extendedProps?.teacher_name,
-        });
-
-        return isIncluded;
+        return selectedTeacherIds.includes(eventTeacherId);
       });
-
-      console.log("📊 Filtered events count:", filteredEvents.length);
       setDisplayedEvents(filteredEvents);
     } else {
-      console.log("📊 Showing all events:", events.length);
+      // Показуємо всі події, включаючи завершені (Given)
       setDisplayedEvents(events);
     }
   };
@@ -2225,6 +2620,12 @@ const Calendar: React.FC = () => {
         return;
       }
 
+      console.log("🔍 Creating unavailable event for teacher:", {
+        teacherId: availabilityForm.teacherId,
+        teacher: teacher,
+        teacherName: `${teacher.first_name} ${teacher.last_name}`,
+      });
+
       // Convert times to UTC for the API
       const startDate = dayjs.tz(availabilityForm.date, timezone);
       const startTime = dayjs.tz(availabilityForm.startTime, timezone);
@@ -2242,6 +2643,7 @@ const Calendar: React.FC = () => {
 
       console.log("🔄 Adding unavailable time:", {
         teacherId: availabilityForm.teacherId,
+        teacherName: `${teacher.first_name} ${teacher.last_name}`,
         startDate: startDateTime.format("YYYY-MM-DD HH:mm:ss"),
         endDate: endDateTime.format("YYYY-MM-DD HH:mm:ss"),
         startUTC,
@@ -2249,13 +2651,26 @@ const Calendar: React.FC = () => {
         timezone,
       });
 
+      // *** ВИПРАВЛЕННЯ: Додаємо всі необхідні поля для unavailable події ***
       const eventData = {
         class_type: "Unavailable",
+        class_status: "Unavailable", // *** ВАЖЛИВО: Правильний статус ***
         teacher_id: availabilityForm.teacherId,
-        class_status: "Not Available",
+        // *** ДОДАЄМО ДОДАТКОВІ ПОЛЯ ДЛЯ ІДЕНТИФІКАЦІЇ ***
+        resourceId: availabilityForm.teacherId, // Для FullCalendar
+        teacherId: availabilityForm.teacherId, // Альтернативне поле
+        teacher_name: `${teacher.first_name} ${teacher.last_name}`, // Ім'я вчителя
+        name: "Unavailable", // Назва події
+        title: "Unavailable", // Альтернативна назва
         startDate: startUTC,
         endDate: endUTC,
+        // *** ДОДАЄМО МЕТА-ДАНІ ***
+        payment_status: "unavailable", // Щоб відрізнити від студентських уроків
+        student_id: null, // Немає студента
+        student_name_text: null, // Немає студента
       };
+
+      console.log("📤 Sending unavailable event data:", eventData);
 
       if (availabilityForm.repeat) {
         // Handle repeating unavailable times
@@ -2271,30 +2686,32 @@ const Calendar: React.FC = () => {
               .minute(endTime.minute());
 
             slots.push({
-              class_type: "Unavailable",
-              teacher_id: availabilityForm.teacherId,
-              class_status: "Not Available",
+              ...eventData, // *** Використовуємо всі поля з eventData ***
               startDate: currentStart.utc().format("YYYY-MM-DDTHH:mm:ss"),
               endDate: currentEnd.utc().format("YYYY-MM-DDTHH:mm:ss"),
             });
           }
         }
 
+        console.log("📤 Creating multiple unavailable slots:", slots.length);
+
         // Create all events
         for (const slot of slots) {
-          await api.post("/calendar/events", {
+          const response = await api.post("/calendar/events", {
             events: {
               added: [slot],
             },
           });
+          console.log("✅ Created unavailable slot:", response.data);
         }
       } else {
         // Create single event
-        await api.post("/calendar/events", {
+        const response = await api.post("/calendar/events", {
           events: {
             added: [eventData],
           },
         });
+        console.log("✅ Created single unavailable event:", response.data);
       }
 
       message.success("Unavailable time added successfully");
@@ -2311,22 +2728,42 @@ const Calendar: React.FC = () => {
         repeatWeeks: 1,
       });
 
-      // Refresh events
-      await fetchEvents();
+      // *** ВАЖЛИВО: Чекаємо трохи перед оновленням подій ***
+      console.log("⏳ Waiting before refreshing events...");
+      setTimeout(async () => {
+        console.log("🔄 Refreshing events after unavailable creation...");
+        await fetchEvents();
+
+        // *** ДОДАТКОВО: Примусово оновлюємо календар ***
+        if (calendarRef.current) {
+          const calendarApi = calendarRef.current.getApi();
+          calendarApi.refetchEvents();
+          console.log("🔄 FullCalendar events refetched");
+        }
+      }, 500); // Чекаємо 500ms
 
       // Notify other components that events have been updated
       localStorage.setItem("calendarEventsUpdated", Date.now().toString());
       console.log(
         "📢 Calendar events updated notification sent at:",
-        new Date().toISOString()
+        new Date().toISOString(),
       );
+
+      // Додатково сповіщаємо через postMessage
+      window.postMessage({ type: "calendarEventsUpdated" }, "*");
+      console.log("📢 Calendar events updated via postMessage");
 
       // Додатково сповіщаємо про оновлення уроків
       localStorage.setItem("lessonsUpdated", Date.now().toString());
       window.dispatchEvent(new Event("lessonsUpdate"));
       console.log("📢 Lessons update notification sent");
     } catch (error) {
-      console.error("Error adding unavailable time:", error);
+      console.error("❌ Error adding unavailable time:", error);
+      console.error("Error details:", {
+        error: error,
+        response: error.response?.data,
+        status: error.response?.status,
+      });
       message.error("Failed to add unavailable time");
     }
   };
@@ -2357,21 +2794,21 @@ const Calendar: React.FC = () => {
           studentId: info.event.extendedProps?.studentId,
           currentStatus: info.oldEvent.extendedProps?.class_status,
           newStatus: info.event.extendedProps?.class_status,
-        }
+        },
       );
 
       // If trying to mark as "Given" and has a student, check if student has paid lessons
       if (isBeingMarkedAsGiven && hasStudent) {
         try {
           console.log(
-            "🔍 handleEventUpdate - Checking student's remaining classes before setting 'Given' status..."
+            "🔍 handleEventUpdate - Checking student's remaining classes before setting 'Given' status...",
           );
           const studentResponse = await api.get(
-            `/students/${hasStudent}/remaining-classes`
+            `/students/${hasStudent}/remaining-classes`,
           );
           const remainingClasses = studentResponse.data.remainingClasses || 0;
 
-          console.log("🔍 handleEventUpdate - Student remaining classes:", {
+          console.log("🔍 Student remaining classes:", {
             studentId: hasStudent,
             remainingClasses,
             canSetGiven: remainingClasses > 0,
@@ -2380,10 +2817,10 @@ const Calendar: React.FC = () => {
           // If student has no paid classes, prevent setting status to "Given"
           if (remainingClasses <= 0) {
             console.log(
-              "❌ handleEventUpdate - Cannot set status to 'Given' - student has no paid classes"
+              "❌ Cannot set status to 'Given' - student has no paid classes",
             );
             message.error(
-              "Cannot mark lesson as 'Given' - student has no paid classes"
+              "Cannot mark lesson as 'Given' - student has no paid classes",
             );
 
             // Revert the drag & drop change
@@ -2414,46 +2851,156 @@ const Calendar: React.FC = () => {
           .format("YYYY-MM-DDTHH:mm:ss");
 
         const updateData = {
-          id: info.event.id,
-          start: startUTC,
-          end: endUTC,
-          class_status:
-            info.event.extendedProps?.class_status || "Not Available",
-          class_type: info.event.extendedProps?.class_type || "Unavailable",
-          teacher_id:
+          id: parseInt(info.event.id),
+          start_date: startUTC,
+          end_date: endUTC,
+          class_status: "Unavailable",
+          class_type: "Unavailable",
+          teacher_id: parseInt(
+            String(
+              info.event.extendedProps?.teacherId ||
+                info.event.extendedProps?.teacher_id ||
+                info.oldEvent.extendedProps?.teacherId ||
+                info.oldEvent.extendedProps?.teacher_id,
+            ),
+          ),
+        };
+
+        console.log("🔄 Updating unavailable event via drag/resize:", {
+          updateData,
+          originalEvent: info.oldEvent,
+          newEvent: info.event,
+          oldStart: info.oldEvent.start,
+          oldEnd: info.oldEvent.end,
+          newStart: info.event.start,
+          newEnd: info.event.end,
+        });
+
+        try {
+          // Використовуємо правильний API для unavailable подій
+          const response = await api.put(
+            `/calendar/events/${info.event.id}`,
+            updateData,
+          );
+          console.log("Update response for unavailable event:", response.data);
+          message.success("Unavailable time slot updated successfully");
+
+          // Створюємо updatedEvent для unavailable events з правильними властивостями
+          const teacherId = String(
             info.event.extendedProps?.teacherId ||
-            info.event.extendedProps?.teacher_id,
-        };
+              info.event.extendedProps?.teacher_id ||
+              info.oldEvent.extendedProps?.teacherId ||
+              info.oldEvent.extendedProps?.teacher_id,
+          );
 
-        console.log(
-          "🔄 Updating unavailable event via drag/resize:",
-          updateData
-        );
+          console.log("🔍 Looking for teacher with ID:", teacherId);
+          console.log(
+            "🔍 Available teachers:",
+            teachers.map((t) => ({
+              id: t.id,
+              name: `${t.first_name} ${t.last_name}`,
+            })),
+          );
+          console.log("🔍 Event extendedProps:", info.event.extendedProps);
+          console.log(
+            "🔍 OldEvent extendedProps:",
+            info.oldEvent.extendedProps,
+          );
 
-        const response = await calendarApi.updateCalendarEvent(updateData);
-        console.log("Update response for unavailable event:", response);
+          const teacher = teachers.find(
+            (t) => String(t.id) === String(teacherId),
+          );
 
-        message.success("Unavailable time slot updated successfully");
+          console.log("🔍 Found teacher:", teacher);
 
-        // Створюємо updatedEvent для unavailable events
-        updatedEvent = {
-          id: info.event.id,
-          title: info.event.title,
-          start: info.event.start,
-          end: info.event.end,
-          allDay: info.event.allDay || false,
-          teacher_name: info.event.extendedProps?.teacher_name,
-          backgroundColor: info.event.backgroundColor,
-          borderColor: info.event.borderColor,
-          textColor: info.event.textColor,
-          extendedProps: {
-            ...info.event.extendedProps,
-            teacherId: info.event.extendedProps?.teacher_id,
-            studentId: info.event.extendedProps?.student_id,
-            teacher_name: info.event.extendedProps?.teacher_name,
-            student_name_text: info.event.extendedProps?.student_name,
-          },
-        };
+          // Додаткові спроби знайти викладача
+          let teacherName = "Unknown Teacher";
+          if (teacher) {
+            teacherName = `${teacher.first_name} ${teacher.last_name}`;
+          } else if (info.event.extendedProps?.teacher_name) {
+            teacherName = info.event.extendedProps.teacher_name;
+          } else if (info.oldEvent.extendedProps?.teacher_name) {
+            teacherName = info.oldEvent.extendedProps.teacher_name;
+          } else {
+            // Остання спроба - знайти по resourceId
+            const resourceTeacher = teachers.find(
+              (t) =>
+                String(t.id) ===
+                String(info.event.resourceId || info.oldEvent.resourceId),
+            );
+            if (resourceTeacher) {
+              teacherName = `${resourceTeacher.first_name} ${resourceTeacher.last_name}`;
+            }
+          }
+
+          console.log("🔍 Final teacher name:", teacherName);
+
+          updatedEvent = {
+            id: info.event.id,
+            title: "Unavailable",
+            start: info.event.start,
+            end: info.event.end,
+            allDay: info.event.allDay || false,
+            backgroundColor: "#d32f2f",
+            borderColor: "#d32f2f",
+            resourceId: teacher ? String(teacher.id) : teacherId,
+            teacherId: teacher ? String(teacher.id) : teacherId,
+            teacher_name: teacherName,
+            extendedProps: {
+              teacherId: teacher ? String(teacher.id) : teacherId,
+              teacher_name: teacherName,
+              class_status: "Unavailable",
+              class_type: "Unavailable",
+              isNotAvailable: true,
+              originalStart: info.event.start,
+              originalEnd: info.event.end,
+              timezone: timezone,
+              utcStart: dayjs(info.event.start).format(),
+              utcEnd: dayjs(info.event.end).format(),
+            },
+          };
+
+          // Оновлюємо локальний стан без перезавантаження з сервера
+          setEvents((prevEvents) =>
+            prevEvents.map((event) =>
+              event.id === updatedEvent.id ? updatedEvent : event,
+            ),
+          );
+
+          // Оновлюємо displayedEvents
+          setDisplayedEvents((prevDisplayedEvents) =>
+            prevDisplayedEvents.map((event) =>
+              event.id === updatedEvent.id ? updatedEvent : event,
+            ),
+          );
+
+          // *** ВИПРАВЛЕННЯ: НЕ викликаємо refetchEvents для unavailable івентів, щоб уникнути зміщення інших івентів ***
+          console.log("✅ Unavailable event updated locally without refetch");
+
+          // *** ВИПРАВЛЕННЯ: Використовуємо setTimeout для синхронізації ***
+          setTimeout(async () => {
+            console.log("🔄 Syncing events after unavailable update...");
+            try {
+              await fetchEvents();
+              console.log("✅ Events synced with server");
+            } catch (error) {
+              console.error("❌ Error syncing events:", error);
+            }
+          }, 1000); // Збільшуємо затримку до 1 секунди
+        } catch (error) {
+          console.error(
+            "❌ Error updating unavailable event via drag/resize:",
+            error,
+          );
+          console.error("Error details:", {
+            error: error,
+            response: error.response?.data,
+            status: error.response?.status,
+          });
+          message.error("Failed to update unavailable event");
+          info.revert();
+          return;
+        }
       } else {
         // Звичайна обробка для інших подій
         updatedEvent = {
@@ -2475,30 +3022,44 @@ const Calendar: React.FC = () => {
           },
         };
 
-        console.log("Sending updated event:", updatedEvent);
+        console.log("Sending updated regular event:", updatedEvent);
 
-        const response = await calendarApi.updateCalendarEvent(updatedEvent);
+        // Використовуємо прямий API виклик замість calendarApi.updateCalendarEvent
+        const response = await api.put(`/calendar/events/${updatedEvent.id}`, {
+          id: parseInt(updatedEvent.id),
+          start_date: dayjs(updatedEvent.start)
+            .utc()
+            .format("YYYY-MM-DDTHH:mm:ss"),
+          end_date: dayjs(updatedEvent.end).utc().format("YYYY-MM-DDTHH:mm:ss"),
+          class_status: updatedEvent.extendedProps?.class_status || "scheduled",
+          class_type: updatedEvent.extendedProps?.class_type || "regular",
+          teacher_id: updatedEvent.extendedProps?.teacherId
+            ? parseInt(updatedEvent.extendedProps.teacherId)
+            : undefined,
+        });
+
         console.log("Update response:", response);
-      }
 
-      // Оновлюємо локальний стан
-      setEvents((prevEvents) =>
-        prevEvents.map((event) =>
-          event.id === updatedEvent.id ? updatedEvent : event
-        )
-      );
+        // Оновлюємо локальний стан
+        setEvents((prevEvents) =>
+          prevEvents.map((event) =>
+            event.id === updatedEvent.id ? updatedEvent : event,
+          ),
+        );
 
-      // Оновлюємо displayedEvents
-      setDisplayedEvents((prevDisplayedEvents) =>
-        prevDisplayedEvents.map((event) =>
-          event.id === updatedEvent.id ? updatedEvent : event
-        )
-      );
+        setDisplayedEvents((prevDisplayedEvents) =>
+          prevDisplayedEvents.map((event) =>
+            event.id === updatedEvent.id ? updatedEvent : event,
+          ),
+        );
 
-      // Примусово оновлюємо календар
-      if (calendarRef.current) {
-        const calendarApi = calendarRef.current.getApi();
-        calendarApi.refetchEvents();
+        // Примусово оновлюємо календар тільки для звичайних івентів
+        if (calendarRef.current && !isUnavailable) {
+          const calendarApi = calendarRef.current.getApi();
+          calendarApi.refetchEvents();
+        }
+
+        toast.success("Event successfully updated!");
       }
 
       // Викликаємо updateDisplayedEvents для правильного фільтрування
@@ -2506,19 +3067,12 @@ const Calendar: React.FC = () => {
         updateDisplayedEvents();
       }, 100);
 
-      // Notify other components that events have been updated
+      // Сповіщаємо інші компоненти
       localStorage.setItem("calendarEventsUpdated", Date.now().toString());
-      console.log(
-        "📢 Calendar events updated notification sent at:",
-        new Date().toISOString()
-      );
-
-      toast.success("Event successfully updated!");
     } catch (error) {
       console.error("Failed to update event:", error);
       toast.error("Помилка при оновленні події");
-      // Відновлюємо оригінальний стан події
-      info.revert();
+      info.revert(); // Відновлюємо оригінальний стан
     }
   };
 
@@ -2551,11 +3105,11 @@ const Calendar: React.FC = () => {
                     // Зберігаємо вибір в localStorage
                     localStorage.setItem(
                       "calendarSelectedTeacherIds",
-                      JSON.stringify(newSelection)
+                      JSON.stringify(newSelection),
                     );
                     console.log(
                       "🎯 Teacher selection updated and saved:",
-                      newSelection
+                      newSelection,
                     );
 
                     return newSelection;
@@ -2591,7 +3145,7 @@ const Calendar: React.FC = () => {
                 // Зберігаємо вибір "All Teachers" в localStorage
                 localStorage.setItem(
                   "calendarSelectedTeacherIds",
-                  JSON.stringify([])
+                  JSON.stringify([]),
                 );
                 console.log("🎯 All Teachers selected and saved");
               }}
@@ -2841,7 +3395,7 @@ const Calendar: React.FC = () => {
                       calculatedEnd: end.format("YYYY-MM-DD HH:mm:ss"),
                       calculatedEndISO: end.toISOString(),
                       selectedValueLocal: dayjs(v).format(
-                        "YYYY-MM-DD HH:mm:ss"
+                        "YYYY-MM-DD HH:mm:ss",
                       ),
                       selectedValueUserTz: v
                         .tz(timezone)
@@ -3122,7 +3676,9 @@ const Calendar: React.FC = () => {
                   onClick={() => {
                     setIsEditingStatus(false);
                     setStatusValue(
-                      mapServerStatus(eventDetails?.class_status || "scheduled")
+                      mapServerStatus(
+                        eventDetails?.class_status || "scheduled",
+                      ),
                     );
                   }}
                 >
@@ -3205,7 +3761,7 @@ const Calendar: React.FC = () => {
                       ? classTypes.find(
                           (type) =>
                             type.value.toLowerCase() ===
-                            eventDetails.class_type.toLowerCase()
+                            eventDetails.class_type.toLowerCase(),
                         )?.label || eventDetails.class_type
                       : "Not specified"}
                   </div>

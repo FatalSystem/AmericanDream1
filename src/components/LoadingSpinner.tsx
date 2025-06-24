@@ -11,7 +11,7 @@ export default function LoadingSpinner() {
       >
         {/* Outer ring */}
         <motion.div
-          className="absolute size-16 rounded-full border-4 border-blue-100 dark:border-gray-700"
+          className="absolute h-16 w-16 rounded-full border-4 border-blue-100 dark:border-gray-700"
           animate={{ rotate: 360 }}
           transition={{
             duration: 2,
@@ -22,7 +22,7 @@ export default function LoadingSpinner() {
 
         {/* Inner spinner */}
         <motion.div
-          className="size-16 rounded-full border-4 border-transparent border-t-blue-600 dark:border-t-blue-400"
+          className="h-16 w-16 rounded-full border-4 border-transparent border-t-blue-600 dark:border-t-blue-400"
           animate={{ rotate: 360 }}
           transition={{
             duration: 1,
@@ -33,7 +33,7 @@ export default function LoadingSpinner() {
 
         {/* Center dot */}
         <motion.div
-          className="absolute left-1/2 top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-600 dark:bg-blue-400"
+          className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-600 dark:bg-blue-400"
           animate={{ scale: [1, 1.2, 1] }}
           transition={{
             duration: 1,
@@ -47,7 +47,7 @@ export default function LoadingSpinner() {
           {[...Array(4)].map((_, i) => (
             <motion.div
               key={i}
-              className="absolute size-2 rounded-full bg-blue-400/30 dark:bg-blue-500/30"
+              className="absolute h-2 w-2 rounded-full bg-blue-400/30 dark:bg-blue-500/30"
               initial={{
                 x: 0,
                 y: 0,

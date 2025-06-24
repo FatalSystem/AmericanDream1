@@ -102,47 +102,49 @@ export default function UserLayout() {
   useEffect(() => {
     fetchMenu();
   }, []);
-
   const fetchMenu = async () => {
     try {
       const res = await api.get("/getMenus");
       auth.setAuth({ type: "MENU", payload: { menu: res.data?.data || [] } });
     } catch (error: any) {
-      console.error("API Error:", error);
-      // Ігноруємо помилки API
-      auth.setAuth({ type: "MENU", payload: { menu: [] } });
+      handleApiError(error);
     }
   };
 
   const handleApiError = (error: any) => {
     console.error("API Error:", error);
-    // Прибираємо перенаправлення на логін
-    toast.error("An error occurred. Please try again.", { theme: "dark" });
+    if (error.response?.status === 401) {
+      localStorage.removeItem("token");
+      toast.error("Session expired. Please login again.", { theme: "dark" });
+      navigate("/");
+    } else {
+      toast.error("An error occurred. Please try again.", { theme: "dark" });
+    }
   };
 
-  const userMenuItems: MenuProps["items"] = [
+  const userMenuItems: MenuProps['items'] = [
     {
-      key: "profile",
+      key: 'profile',
       icon: <UserOutlined />,
-      label: "Profile",
+      label: 'Profile',
     },
     {
-      key: "settings",
+      key: 'settings',
       icon: <SettingOutlined />,
-      label: "Settings",
+      label: 'Settings',
     },
     {
-      type: "divider",
+      type: 'divider',
     },
     {
-      key: "logout",
+      key: 'logout',
       icon: <HiLogout />,
-      label: "Logout",
+      label: 'Logout',
       danger: true,
       onClick: () => {
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-        navigate("/");
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          navigate("/");
       },
     },
   ];
@@ -153,9 +155,9 @@ export default function UserLayout() {
   };
 
   return (
-    <div className="min-h-screen w-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+    <div className="min-h-screen w-[100vw] bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
       {/* Enhanced Navbar */}
-      <nav className="fixed top-0 z-50 w-screen border-b border-gray-200 bg-white/95 shadow-sm backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/95">
+      <nav className="fixed top-0 z-50 w-[100vw] border-b border-gray-200 bg-white/95 shadow-sm backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/95">
         <div className="px-6 py-4 lg:px-5 lg:pl-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -164,12 +166,12 @@ export default function UserLayout() {
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                 className="inline-flex items-center rounded-lg p-2 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-600 sm:hidden"
               >
-                <FaBars className="size-5" />
+                <FaBars className="h-5 w-5" />
               </button>
               <a href="" className="flex items-center gap-3">
                 <img
                   src="https://flowbite.com/docs/images/logo.svg"
-                  className="size-8 transition-transform hover:scale-110"
+                  className="h-8 w-8 transition-transform hover:scale-110"
                   alt="American Dream"
                 />
                 <span className="self-center whitespace-nowrap text-xl font-semibold text-gray-800 dark:text-white">
@@ -184,7 +186,7 @@ export default function UserLayout() {
               <div className="hidden md:block">
                 <TimezoneDisplay />
               </div>
-
+              
               <Badge
                 count={notifications}
                 className="cursor-pointer"
@@ -214,22 +216,20 @@ export default function UserLayout() {
       {/* Enhanced Sidebar */}
       <aside
         id="default-sidebar"
-        className={`fixed left-0 top-0 z-40 h-screen border-r border-gray-200 bg-white/95 pt-16 shadow-lg backdrop-blur-sm transition-all duration-300 ease-in-out dark:border-gray-700 dark:bg-gray-800/95 sm:translate-x-0${
+        className={`fixed left-0 top-0 z-40 h-screen transform border-r border-gray-200 bg-white/95 pt-16 shadow-lg backdrop-blur-sm transition-all duration-300 ease-in-out dark:border-gray-700 dark:bg-gray-800/95 sm:translate-x-0 ${
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         } ${isCollapsed ? "w-20" : "w-64"}`}
         aria-label="Sidenav"
       >
         <div className="flex h-full flex-col justify-between px-3 py-4">
           <div className="space-y-4">
-            <div
-              className={`flex justify-between px-3 ${isCollapsed ? "justify-center px-0" : ""}`}
-            >
+            <div className={`flex justify-between px-3 ${isCollapsed ? "justify-center px-0" : ""}`}>
               {!isCollapsed && (
                 <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                   Main Menu
                 </h2>
               )}
-              <button
+              <button 
                 onClick={toggleCollapse}
                 className="rounded-lg p-1.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-600"
                 title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -245,56 +245,37 @@ export default function UserLayout() {
                 currentPath={currentPath}
                 isCollapsed={isCollapsed}
               />
-              <SidebarItem
-                label="Students"
-                route={["/users/students"]}
-                icon={<FaChild />}
-                currentPath={currentPath}
-                isCollapsed={isCollapsed}
-              />
-              <SidebarItem
-                label="Teachers"
-                route={["/users/teachers"]}
-                icon={<FaChalkboardTeacher />}
-                currentPath={currentPath}
-                isCollapsed={isCollapsed}
-              />
-              <SidebarItem
-                label="Classes"
-                route={["/class/manage"]}
-                icon={<FaStudiovinari />}
-                currentPath={currentPath}
-                isCollapsed={isCollapsed}
-              />
-              <SidebarItem
-                label="Calendar"
-                route={["/calendar"]}
-                icon={<FaCalendar />}
-                currentPath={currentPath}
-                isCollapsed={isCollapsed}
-              />
-              <SidebarItem
-                label="Payments"
-                route={["/payments"]}
-                icon={<FaPaypal />}
-                currentPath={currentPath}
-                isCollapsed={isCollapsed}
-              />
+              {auth.menus.map((menu: any, key: number) => (
+                <SidebarItem
+                  key={key}
+                  label={menu.menu.menu_name}
+                  route={[menu.menu.route]}
+                  icon={iconComponents[menu.menu.menu_icon] || null}
+                  currentPath={currentPath}
+                  isCollapsed={isCollapsed}
+                />
+              ))}
             </ul>
           </div>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <div
-        className={`min-h-screen pt-16 transition-all duration-300 ease-in-out ${
-          isCollapsed ? "sm:ml-20" : "sm:ml-64"
-        }`}
-      >
-        <div className="p-4">
-          <Outlet />
+      {/* Enhanced Main Content - adjust padding based on sidebar state */}
+      <div className={`min-h-screen pt-16 transition-all duration-300 ${isCollapsed ? "sm:ml-20" : "sm:ml-64"}`}>
+        <div className="container mx-auto p-4">
+          <div className="rounded-lg bg-white/50 shadow-md backdrop-blur-sm dark:bg-gray-800/50 md:p-6">
+            <Outlet />
+          </div>
         </div>
       </div>
+
+      {/* Enhanced Overlay */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-gray-900/50 backdrop-blur-sm transition-opacity duration-300 sm:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -311,27 +292,121 @@ const SidebarItem = ({
   isCollapsed = false,
 }: SidebarItemProps) => {
   const navigate = useNavigate();
-  const isActive = route.some((path) => currentPath.startsWith(path));
-
   const toNavigate = (url: string) => {
     navigate(url);
   };
 
+  const isSelected = currentPath === route[0];
+
+  if (isCollapsed) {
+    return (
+      <li>
+        <a
+          onClick={() => {
+            toNavigate(route[0]);
+            onClick();
+          }}
+          title={label}
+          className={`flex cursor-pointer items-center justify-center rounded-lg p-2.5 text-base font-medium transition-all duration-200
+            ${
+              isSelected
+                ? "bg-primary-50 text-primary-600 dark:bg-primary-900/10 dark:text-primary-500"
+                : "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+            }`}
+        >
+          {icon && (
+            <span
+              className={`text-lg transition-colors ${
+                isSelected
+                  ? "text-primary-600 dark:text-primary-500"
+                  : "text-gray-500 group-hover:text-primary-500 dark:text-gray-400"
+              }`}
+            >
+              {icon}
+            </span>
+          )}
+        </a>
+      </li>
+    );
+  }
+
   return (
     <li>
-      <button
-        onClick={() => toNavigate(route[0])}
-        className={`flex w-full items-center rounded-lg p-2 text-base font-normal text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 ${
-          isActive ? "bg-gray-100 dark:bg-gray-700" : ""
-        }`}
-      >
-        <span className="flex size-6 items-center justify-center text-gray-500 transition duration-75 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white">
-          {icon}
-        </span>
-        {!isCollapsed && (
-          <span className="ml-3 flex-1 whitespace-nowrap">{label}</span>
-        )}
-      </button>
+      {dropdownId ? (
+        <button
+          onClick={onClick}
+          className="group flex w-full items-center justify-between rounded-lg p-2.5 text-base font-medium text-gray-700 transition-all duration-200 hover:bg-gray-100 hover:pl-4 dark:text-gray-200 dark:hover:bg-gray-700"
+          aria-controls={dropdownId}
+          data-collapse-toggle={dropdownId}
+        >
+          <div className="flex items-center gap-3">
+            {icon && (
+              <span className="text-gray-500 transition-colors group-hover:text-primary-500 dark:text-gray-400">
+                {icon}
+              </span>
+            )}
+            <span>{label}</span>
+          </div>
+          <svg
+            className="h-5 w-5 transition-transform duration-200 group-aria-expanded:rotate-180"
+            fill="currentColor"
+            viewBox="0 0 20 20"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              fillRule="evenodd"
+              d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </button>
+      ) : (
+        <a
+          onClick={() => {
+            toNavigate(route[0]);
+            onClick();
+          }}
+          className={`flex cursor-pointer items-center gap-3 rounded-lg p-2.5 text-base font-medium transition-all duration-200 hover:pl-4
+            ${
+              isSelected
+                ? "bg-primary-50 text-primary-600 dark:bg-primary-900/10 dark:text-primary-500"
+                : "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+            }`}
+        >
+          {icon && (
+            <span
+              className={`text-lg transition-colors ${
+                isSelected
+                  ? "text-primary-600 dark:text-primary-500"
+                  : "text-gray-500 group-hover:text-primary-500 dark:text-gray-400"
+              }`}
+            >
+              {icon}
+            </span>
+          )}
+          <span>{label}</span>
+        </a>
+      )}
+      {isDropdownOpen && items && (
+        <ul id={dropdownId} className="mt-1 space-y-1">
+          {items.map((item, key) => (
+            <li key={item}>
+              <a
+                onClick={() => {
+                  toNavigate(route[key]);
+                }}
+                className={`flex cursor-pointer items-center rounded-lg p-2 pl-11 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700 ${
+                  currentPath === route[key]
+                    ? "bg-primary-50 text-primary-600 dark:bg-primary-900/10 dark:text-primary-500"
+                    : ""
+                }`}
+              >
+                {item}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
     </li>
   );
 };

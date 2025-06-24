@@ -174,6 +174,16 @@ export default function Teachers() {
   const columns: TableColumnsType<any> = (
     [
       {
+        title: "No",
+        dataIndex: "index",
+        width: "8%",
+        key: "index",
+        fixed: "left",
+        render: (_: any, __: any, index: number) => (
+          <span className="text-gray-600 dark:text-gray-400">{index + 1}</span>
+        ),
+      },
+      {
         title: "First Name",
         dataIndex: "first_name",
         key: "first_name",
@@ -211,13 +221,14 @@ export default function Teachers() {
       {
         title: "Trial Rate",
         key: "trial_rate",
+        width: "12%",
         render: (_: any, record: any) => {
-          const rate = record.TeacherRates?.find((r: any) =>
-            r.class_type?.name?.toLowerCase().includes("trial"),
+          const trialRate = record.TeacherRates?.find(
+            (rate: any) => rate.class_type_id === 1,
           );
           return (
-            <span className="font-medium text-gray-900 dark:text-white">
-              {rate ? rate.rate : "-"}
+            <span className="font-medium text-green-600 dark:text-green-400">
+              ${trialRate?.rate || "10"}
             </span>
           );
         },
@@ -225,13 +236,14 @@ export default function Teachers() {
       {
         title: "Regular Rate",
         key: "regular_rate",
+        width: "12%",
         render: (_: any, record: any) => {
-          const rate = record.TeacherRates?.find((r: any) =>
-            r.class_type?.name?.toLowerCase().includes("regular"),
+          const regularRate = record.TeacherRates?.find(
+            (rate: any) => rate.class_type_id === 2,
           );
           return (
-            <span className="font-medium text-gray-900 dark:text-white">
-              {rate ? rate.rate : "-"}
+            <span className="font-medium text-green-600 dark:text-green-400">
+              ${regularRate?.rate || "8"}
             </span>
           );
         },
@@ -239,13 +251,14 @@ export default function Teachers() {
       {
         title: "Training Rate",
         key: "training_rate",
+        width: "12%",
         render: (_: any, record: any) => {
-          const rate = record.TeacherRates?.find((r: any) =>
-            r.class_type?.name?.toLowerCase().includes("training"),
+          const trainingRate = record.TeacherRates?.find(
+            (rate: any) => rate.class_type_id === 3,
           );
           return (
-            <span className="font-medium text-gray-900 dark:text-white">
-              {rate ? rate.rate : "-"}
+            <span className="font-medium text-green-600 dark:text-green-400">
+              ${trainingRate?.rate || "10"}
             </span>
           );
         },
@@ -320,7 +333,7 @@ export default function Teachers() {
         title={
           <div className="flex items-center gap-3">
             <span className="text-lg font-semibold text-white">Teachers</span>
-            <div className="size-2 animate-pulse rounded-full bg-green-400" />
+            <div className="h-2 w-2 animate-pulse rounded-full bg-green-400" />
           </div>
         }
         className="overflow-hidden rounded-xl border-0 shadow-lg transition-shadow hover:shadow-xl"

@@ -2,21 +2,23 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Suspense, lazy } from "react";
 import LoadingSpinner from "./components/LoadingSpinner";
 
+const SignInLazy = lazy(() => import("./pages/auth/SignIn"));
+const SignUpLazy = lazy(() => import("./pages/auth/SignUp"));
 const UserLayoutLazy = lazy(() => import("./layouts/UserLayout"));
 const DashboardLazy = lazy(() => import("./pages/home/Dashboard"));
 const StudentsLazy = lazy(() => import("./pages/users/Students"));
-const TeachersLazy = lazy(() => import("./pages/teachers"));
+const TeachersLazy = lazy(() => import("./pages/users/Teachers"));
 const ClassTypeLazy = lazy(() => import("./pages/class/ClassType"));
-const ClassManageLazy = lazy(() => import("./pages/class"));
+const ClassManageLazy = lazy(() => import("./pages/class/ClassManage"));
 const PaymentStLazy = lazy(() => import("./pages/pay/PaymentSt"));
 const ManageLazy = lazy(() => import("./pages/users/Manage"));
+const ForgotPasswordLazy = lazy(() => import("./pages/auth/ForgotPassword"));
+const ResetPasswordLazy = lazy(() => import("./pages/auth/ResetPassword"));
 const CalendarLazy = lazy(() => import("./pages/calendar/Calendar"));
 const NotFoundLazy = lazy(() => import("./components/NotFound"));
 const ClassInfoLazy = lazy(() => import("./pages/class/ClassInfo"));
 const WordsLazy = lazy(() => import("./pages/class/Words"));
 const ErrorPageLazy = lazy(() => import("./components/ErrorPage"));
-const SignInLazy = lazy(() => import("./pages/auth/SignIn"));
-const SignUpLazy = lazy(() => import("./pages/auth/SignUp"));
 
 const routes = createBrowserRouter([
   {
@@ -116,24 +118,6 @@ const routes = createBrowserRouter([
     ],
   },
   {
-    path: "/auth/signin",
-    errorElement: <ErrorPageLazy />,
-    element: (
-      <Suspense fallback={<LoadingSpinner />}>
-        <SignInLazy />
-      </Suspense>
-    ),
-  },
-  {
-    path: "/auth/signup",
-    errorElement: <ErrorPageLazy />,
-    element: (
-      <Suspense fallback={<LoadingSpinner />}>
-        <SignUpLazy />
-      </Suspense>
-    ),
-  },
-  {
     path: "/login",
     errorElement: <ErrorPageLazy />,
     element: (
@@ -148,6 +132,24 @@ const routes = createBrowserRouter([
     element: (
       <Suspense fallback={<LoadingSpinner />}>
         <SignUpLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: "/forgot-password",
+    errorElement: <ErrorPageLazy />,
+    element: (
+      <Suspense fallback={<LoadingSpinner />}>
+        <ForgotPasswordLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: "/reset-password",
+    errorElement: <ErrorPageLazy />,
+    element: (
+      <Suspense fallback={<LoadingSpinner />}>
+        <ResetPasswordLazy />
       </Suspense>
     ),
   },

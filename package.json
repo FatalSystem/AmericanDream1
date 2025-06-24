@@ -13,6 +13,10 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit"
   },
+  "postinstall": {
+    "node_modules/@bryntum/calendar/*.css*": "copy public/themes/",
+    "node_modules/@bryntum/calendar/fonts/*": "copy public/themes/fonts/"
+  },
   "dependencies": {
     "@ant-design/icons": "^6.0.0",
     "@fullcalendar/core": "^6.1.10",

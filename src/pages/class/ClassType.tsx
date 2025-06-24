@@ -25,12 +25,6 @@ interface ClassType {
 // Gerçek class type ID'leri - sadece bunları göster
 const VALID_CLASS_TYPE_IDS = [1, 2, 3]; // Trial-Lesson, Regular-Lesson, Training
 
-// Add function to check if user has access to Training type
-const hasTrainingAccess = () => {
-  const userRole = localStorage.getItem("role");
-  return userRole === "accountant" || userRole === "super_admin";
-};
-
 export default function ClassType() {
   const navigate = useNavigate();
   const { permissions, loading_1 } = usePermissions("/class/type");
@@ -39,7 +33,7 @@ export default function ClassType() {
   const [openModal, setOpenModal] = useState(false);
   const [openEditModal, setOpenEditModal] = useState(false);
   const [selectedClassType, setSelectedClassType] = useState<ClassType | null>(
-    null
+    null,
   );
 
   const [loading, setLoading] = useState(false);
@@ -61,15 +55,10 @@ export default function ClassType() {
     try {
       setLoading(true);
       const res = await api.get("/class-types");
-      // Filter class types based on user role and valid IDs
-      const validClassTypes = res.data.filter((classType: ClassType) => {
-        if (classType.name === "Training") {
-          return (
-            hasTrainingAccess() && VALID_CLASS_TYPE_IDS.includes(classType.id)
-          );
-        }
-        return VALID_CLASS_TYPE_IDS.includes(classType.id);
-      });
+      // Sadece geçerli ID'lere sahip class type'ları filtrele
+      const validClassTypes = res.data.filter((classType: ClassType) => 
+        VALID_CLASS_TYPE_IDS.includes(classType.id)
+      );
       setClassTypeData(validClassTypes || []);
       setLoading(false);
     } catch (error: any) {
@@ -95,14 +84,6 @@ export default function ClassType() {
       return;
     }
 
-    // Check if trying to create Training type without permission
-    if (name === "Training" && !hasTrainingAccess()) {
-      toast.error("You don't have permission to create Training class type.", {
-        theme: "dark",
-      });
-      return;
-    }
-
     try {
       const res = await api.post("/class-types", { name });
 
@@ -117,18 +98,9 @@ export default function ClassType() {
 
   const deleteClassType = async (id: number) => {
     try {
-      const classType = classTypeData.find((ct) => ct.id === id);
-      if (classType?.name === "Training" && !hasTrainingAccess()) {
-        toast.error(
-          "You don't have permission to delete Training class type.",
-          { theme: "dark" }
-        );
-        return;
-      }
-
       await api.delete(`/class-types/${id}`);
       setClassTypeData((prevData) =>
-        prevData.filter((classType) => classType.id !== id)
+        prevData.filter((classType) => classType.id !== id),
       );
       toast.success("Class type deleted successfully!", { theme: "dark" });
     } catch (error: any) {
@@ -137,12 +109,6 @@ export default function ClassType() {
   };
 
   const openEditClassType = (classType: ClassType) => {
-    if (classType.name === "Training" && !hasTrainingAccess()) {
-      toast.error("You don't have permission to edit Training class type.", {
-        theme: "dark",
-      });
-      return;
-    }
     setSelectedClassType(classType);
     setName(classType.name);
     setOpenEditModal(true);
@@ -151,15 +117,6 @@ export default function ClassType() {
   const updateClassType = async () => {
     if (!selectedClassType || !name) return;
 
-    // Check if trying to update to Training type without permission
-    if (name === "Training" && !hasTrainingAccess()) {
-      toast.error(
-        "You don't have permission to update to Training class type.",
-        { theme: "dark" }
-      );
-      return;
-    }
-
     try {
       const res = await api.put(`/class-types/${selectedClassType.id}`, {
         name,
@@ -167,8 +124,10 @@ export default function ClassType() {
 
       setClassTypeData((prevData) =>
         prevData.map((classType) =>
-          classType.id === selectedClassType.id ? res.data.classType : classType
-        )
+          classType.id === selectedClassType.id
+            ? res.data.classType
+            : classType,
+        ),
       );
 
       setOpenEditModal(false);
@@ -237,7 +196,7 @@ export default function ClassType() {
             ),
           },
         ] as TableColumnsType<ClassType>)
-      : []
+      : [],
   );
 
   if (loading_1) {
@@ -277,8 +236,10 @@ export default function ClassType() {
       <Card
         title={
           <div className="flex items-center gap-3">
-            <span className="text-lg font-semibold text-white">Class Type</span>
-            <div className="size-2 animate-pulse rounded-full bg-green-400" />
+            <span className="text-lg font-semibold text-white">
+              Class Type
+            </span>
+            <div className="h-2 w-2 animate-pulse rounded-full bg-green-400" />
           </div>
         }
         className="overflow-hidden rounded-xl border-0 shadow-lg transition-shadow hover:shadow-xl"
@@ -287,29 +248,42 @@ export default function ClassType() {
         extra={
           <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row">
             {permissions.create && (
-              <Button
-                gradientDuoTone="purpleToBlue"
-                onClick={() => setOpenModal(true)}
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-900 to-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                onClick={() => {
+                  setOpenModal(true);
+                  setName("");
+                }}
               >
-                Add Class Type
-              </Button>
+                + Add Class Type
+              </motion.button>
             )}
           </div>
         }
       >
-        <Table
-          columns={columns}
-          dataSource={classTypeData}
-          rowKey="id"
-          className="dark:bg-gray-800"
-          pagination={{
-            position: ["bottomCenter"],
-            showSizeChanger: true,
-            showQuickJumper: true,
-          }}
-        />
+        <div className="custom-table overflow-hidden rounded-lg shadow-md">
+          <Table
+            style={{ width: "100%" }}
+            className="custom-table"
+            columns={columns}
+            dataSource={classTypeData.map((item, index) => ({
+              ...item,
+              key: index,
+            }))}
+            pagination={false}
+            loading={{
+              spinning: loading,
+              size: "large",
+            }}
+            scroll={{ x: "max-content", y: "calc(65vh - 200px)" }}
+            size="middle"
+          />
+        </div>
       </Card>
 
+      {/* Add Class Type Modal */}
       {permissions.create && (
         <Modal
           show={openModal}
@@ -335,16 +309,16 @@ export default function ClassType() {
                   className="w-full rounded-lg"
                 />
               </div>
-              <div className="flex flex-col gap-2 pt-4 xs:flex-row">
+              <div className="xs:flex-row flex flex-col gap-2 pt-4">
                 <Button
-                  className="w-full xs:w-auto"
+                  className="xs:w-auto w-full"
                   gradientDuoTone="purpleToBlue"
                   onClick={createClassType}
                 >
                   Add
                 </Button>
                 <Button
-                  className="w-full xs:w-auto"
+                  className="xs:w-auto w-full"
                   color="gray"
                   onClick={() => setOpenModal(false)}
                 >
@@ -356,6 +330,7 @@ export default function ClassType() {
         </Modal>
       )}
 
+      {/* Edit Class Type Modal */}
       {permissions.update && (
         <Modal
           show={openEditModal}
@@ -380,16 +355,16 @@ export default function ClassType() {
                   className="w-full rounded-lg"
                 />
               </div>
-              <div className="flex flex-col gap-2 pt-4 xs:flex-row">
+              <div className="xs:flex-row flex flex-col gap-2 pt-4">
                 <Button
-                  className="w-full xs:w-auto"
+                  className="xs:w-auto w-full"
                   gradientDuoTone="purpleToBlue"
                   onClick={updateClassType}
                 >
                   Update
                 </Button>
                 <Button
-                  className="w-full xs:w-auto"
+                  className="xs:w-auto w-full"
                   color="gray"
                   onClick={() => setOpenEditModal(false)}
                 >

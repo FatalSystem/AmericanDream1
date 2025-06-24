@@ -49,7 +49,7 @@ export default function ResetPassword() {
 
   if (!token) {
     return (
-      <div className="flex min-h-screen w-screen items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50 px-4 dark:from-gray-900 dark:to-gray-800">
+      <div className="flex min-h-screen w-[100vw] items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50 px-4 dark:from-gray-900 dark:to-gray-800">
         <div className="rounded-2xl bg-white px-8 py-10 shadow-xl dark:bg-gray-800">
           <div className="text-center">
             <h1 className="mb-4 text-2xl font-bold text-red-600 dark:text-red-400">
@@ -74,7 +74,7 @@ export default function ResetPassword() {
   }
 
   return (
-    <div className="flex min-h-screen w-screen items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50 px-4 dark:from-gray-900 dark:to-gray-800">
+    <div className="flex min-h-screen w-[100vw] items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50 px-4 dark:from-gray-900 dark:to-gray-800">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

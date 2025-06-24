@@ -9,18 +9,11 @@ import {
 
 // Define the structure of the modal form
 interface FormData {
-  id?: number;
   date: string;
-  course?: string;
-  unit?: string;
-  canDo?: string;
-  notes?: string;
-  studentId?: string | number;
-  teacherId?: string | number;
-  studentName?: string;
-  teacherName?: string;
-  status?: string;
-  type?: string;
+  course: string;
+  unit: string;
+  canDo: string;
+  notes: string;
 }
 
 // Define the context value type

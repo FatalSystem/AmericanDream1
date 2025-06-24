@@ -22,14 +22,13 @@ export default function SignIn() {
     setLoading(true);
     try {
       await auth.login(values.email, values.password);
-      navigate("/dashboard");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen w-screen items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50 px-4 dark:from-gray-900 dark:to-gray-800">
+    <div className="flex min-h-screen w-[100vw] items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50 px-4 dark:from-gray-900 dark:to-gray-800">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -94,7 +93,7 @@ export default function SignIn() {
                 <label className="flex items-center">
                   <input
                     type="checkbox"
-                    className="size-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
                   <span className="ml-2 text-sm text-gray-600 dark:text-gray-400">
                     Remember me
@@ -157,7 +156,7 @@ export default function SignIn() {
                 whileTap={{ scale: 0.98 }}
                 className="flex items-center justify-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
               >
-                <img className="mr-2 size-5" src="/google.svg" alt="Google" />
+                <img className="mr-2 h-5 w-5" src="/google.svg" alt="Google" />
                 Google
               </motion.button>
 
@@ -167,7 +166,7 @@ export default function SignIn() {
                 className="flex items-center justify-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
               >
                 <img
-                  className="mr-2 size-5"
+                  className="mr-2 h-5 w-5"
                   src="/facebook.svg"
                   alt="Facebook"
                 />

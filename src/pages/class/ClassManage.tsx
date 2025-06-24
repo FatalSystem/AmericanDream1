@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Button, Modal, Label, TextInput, Select } from "flowbite-react";
 import {
   Card,
@@ -32,7 +32,7 @@ import {
   DEFAULT_DB_TIMEZONE,
   formatTime,
 } from "../../utils/timezone";
-import moment from "moment";
+import { syncLessonToCalendar, triggerGlobalSync } from "../../utils/syncUtils";
 
 // Initialize dayjs plugins
 dayjs.extend(utc);
@@ -51,6 +51,7 @@ interface Lesson {
   class_status?: string;
   start_time?: string;
   end_time?: string;
+  createdAt: string;
 }
 
 interface Student {
@@ -70,6 +71,39 @@ interface ClassType {
   name: string;
 }
 
+// Додаємо інтерфейс для календарних подій
+interface CalendarEvent {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  class_type: string;
+  class_status?: string;
+  payment_status?: string;
+  student_id?: number;
+  teacher_id?: number;
+  student_name_text?: string;
+  teacher_name?: string;
+  createdAt?: string;
+  title?: string;
+  resourceId?: number;
+}
+
+// Додаємо загальний інтерфейс для об'єднаних даних
+interface CombinedTableData {
+  key: number;
+  id: string | number;
+  type: "lesson" | "calendar_event";
+  lesson_date: string;
+  student_name: string;
+  teacher_name: string;
+  class_type: string;
+  start_time: string;
+  class_status: string;
+  source: "lessons" | "calendar";
+  original: Lesson | CalendarEvent;
+}
+
 const CLASS_STATUS_OPTIONS = [
   { value: "", label: "Select Class Status" },
   { value: "Given", label: "Given" },
@@ -81,32 +115,6 @@ const CLASS_STATUS_OPTIONS = [
 // Gerçek class type ID'leri - sadece bunları göster
 const VALID_CLASS_TYPE_IDS = [1, 2, 3]; // Trial-Lesson, Regular-Lesson, Training
 
-// Add function to check if user has access to Training type
-const hasTrainingAccess = () => {
-  const userRole = localStorage.getItem("role");
-  return userRole === "accountant" || userRole === "super_admin";
-};
-
-const getStatusColor = (status: string): string => {
-  switch (status.toLowerCase()) {
-    case "completed":
-    case "given":
-      return "text-green-600";
-    case "cancelled":
-      return "text-red-600";
-    case "no_show_student":
-    case "no show student":
-      return "text-yellow-600";
-    case "no_show_teacher":
-    case "no show teacher":
-      return "text-red-600";
-    case "scheduled":
-      return "text-blue-600";
-    default:
-      return "text-gray-600";
-  }
-};
-
 const ClassManage: React.FC = () => {
   const navigate = useNavigate();
   const { permissions, loading_1 } = usePermissions("/class/manage");
@@ -116,6 +124,7 @@ const ClassManage: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [classTypes, setClassTypes] = useState<ClassType[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [payState, setPayState] = useState(false);
 
   const [classDate, setClassDate] = useState("");
@@ -135,8 +144,7 @@ const ClassManage: React.FC = () => {
 
   // Check if user is a manager or admin
   const isManagerOrAdmin =
-    auth.user?.role?.role_name === "manager" ||
-    auth.user?.role?.role_name === "admin";
+    auth.user?.role === "manager" || auth.user?.role === "admin";
 
   // Filter class status options based on user role
   const filteredClassStatusOptions = CLASS_STATUS_OPTIONS.filter((option) => {
@@ -163,259 +171,656 @@ const ClassManage: React.FC = () => {
   const fetchClasses = async () => {
     try {
       setLoading(true);
-      console.log("Starting to fetch classes data...");
-
-      const [lessonsRes, studentsRes, teachersRes, classTypesRes] =
-        await Promise.all([
-          api.get("/lessons"),
-          api.get("/students"),
-          api.get("/teachers"),
-          api.get("/class-types"),
-        ]);
+      const [
+        lessonsRes,
+        studentsRes,
+        teachersRes,
+        classTypesRes,
+        calendarEventsRes,
+      ] = await Promise.all([
+        api.get("/lessons"),
+        api.get("/students"),
+        api.get("/teachers"),
+        api.get("/class-types"),
+        api.get("/calendar/events"), // Додаємо запит календарних подій
+      ]);
 
       // Debug the API response for lessons
-      console.log("Raw lessons response:", lessonsRes);
-      console.log("Lessons response data:", lessonsRes.data);
-
-      // Try different possible data structures
-      let lessonsData = [];
-      if (Array.isArray(lessonsRes.data)) {
-        lessonsData = lessonsRes.data;
-      } else if (lessonsRes.data && Array.isArray(lessonsRes.data.lessons)) {
-        lessonsData = lessonsRes.data.lessons;
-      } else if (lessonsRes.data && Array.isArray(lessonsRes.data.data)) {
-        lessonsData = lessonsRes.data.data;
-      } else if (lessonsRes.data && Array.isArray(lessonsRes.data.rows)) {
-        lessonsData = lessonsRes.data.rows;
-      } else {
-        console.warn("Unexpected lessons data structure:", lessonsRes.data);
-        lessonsData = [];
-      }
-
+      const lessonsData = lessonsRes.data || [];
       console.log(
-        "Processed lessons data:",
-        JSON.stringify(lessonsData, null, 2)
+        "Complete lessons data:",
+        JSON.stringify(lessonsData, null, 2),
       );
-      console.log("Lessons count:", lessonsData.length);
 
-      // Show detailed debug of first lesson
-      if (lessonsData.length > 0) {
-        const firstLesson = lessonsData[0];
-        console.log("First lesson details:", {
-          id: firstLesson.id,
-          date: firstLesson.lesson_date,
-          start_time: firstLesson.start_time,
-          end_time: firstLesson.end_time,
-          start_time_type: typeof firstLesson.start_time,
-          student: firstLesson.Student
-            ? `${firstLesson.Student.first_name} ${firstLesson.Student.last_name}`
-            : "No student data",
-          teacher: firstLesson.Teacher
-            ? `${firstLesson.Teacher.first_name} ${firstLesson.Teacher.last_name}`
-            : "No teacher data",
-        });
-      } else {
-        console.log("No lessons data returned from API");
-      }
-
-      // Check other API responses
-      const studentsData = Array.isArray(studentsRes.data)
-        ? studentsRes.data
-        : studentsRes.data?.students ||
-          studentsRes.data?.data ||
-          studentsRes.data?.rows ||
-          [];
-      const teachersData = Array.isArray(teachersRes.data)
-        ? teachersRes.data
-        : teachersRes.data?.teachers ||
-          teachersRes.data?.data ||
-          teachersRes.data?.rows ||
-          [];
-      const classTypesData = Array.isArray(classTypesRes.data)
-        ? classTypesRes.data
-        : classTypesRes.data?.classTypes ||
-          classTypesRes.data?.data ||
-          classTypesRes.data?.rows ||
-          [];
-
-      console.log("Students count:", studentsData.length);
-      console.log("Teachers count:", teachersData.length);
-      console.log("Class types count:", classTypesData.length);
+      // Логуємо сирі дані з сервера для перевірки порядку
+      console.log(
+        "🔍 Raw lessons from server (first 5):",
+        lessonsData.slice(0, 5).map((lesson: any, index: number) => ({
+          position: index + 1,
+          id: lesson.id,
+          date: lesson.lesson_date,
+          time: lesson.start_time,
+          student: lesson.Student
+            ? `${lesson.Student.first_name} ${lesson.Student.last_name}`
+            : "No student",
+          teacher: lesson.Teacher
+            ? `${lesson.Teacher.first_name} ${lesson.Teacher.last_name}`
+            : "No teacher",
+        })),
+      );
 
       setLessons(lessonsData);
-      setStudents(studentsData);
-      setTeachers(teachersData);
-      setClassTypes(classTypesData);
+      setStudents(studentsRes.data || []);
+      setTeachers(teachersRes.data || []);
+      setClassTypes(classTypesRes.data || []);
+
+      // Логуємо завантажені вчителі
+      console.log("👨‍🏫 Loaded teachers:", {
+        count: teachersRes.data?.length || 0,
+        teachers:
+          teachersRes.data?.map((t) => ({
+            id: t.id,
+            name: `${t.first_name} ${t.last_name}`,
+          })) || [],
+        teacherIds: teachersRes.data?.map((t) => t.id) || [],
+      });
+
+      // Обробка календарних подій
+      const calendarEventsData = Array.isArray(calendarEventsRes.data)
+        ? calendarEventsRes.data
+        : calendarEventsRes.data.events?.rows || [];
+
+      console.log("📥 Calendar events API response:", calendarEventsRes.data);
+      console.log("📊 Calendar events structure:", {
+        isArray: Array.isArray(calendarEventsRes.data),
+        hasEvents: !!calendarEventsRes.data.events,
+        eventsType: typeof calendarEventsRes.data.events,
+        hasRows: !!calendarEventsRes.data.events?.rows,
+        rowsLength: calendarEventsRes.data.events?.rows?.length,
+      });
+      console.log("📋 Final calendar events array:", calendarEventsData);
+      console.log(
+        "📊 Calendar events array length:",
+        calendarEventsData.length,
+      );
+
+      // Логуємо перші кілька календарних подій для діагностики
+      console.log(
+        "🔍 First 3 calendar events:",
+        calendarEventsData.slice(0, 3).map((event: any, index: number) => ({
+          position: index + 1,
+          id: event.id,
+          name: event.name,
+          teacher_id: event.teacher_id,
+          teacher_name: event.teacher_name,
+          resourceId: event.resourceId,
+          student_id: event.student_id,
+          student_name_text: event.student_name_text,
+          class_type: event.class_type,
+          class_status: event.class_status,
+        })),
+      );
+
+      setCalendarEvents(calendarEventsData);
 
       setLoading(false);
     } catch (error: any) {
       console.error("Error fetching data:", error);
-      console.error("Error details:", {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status,
-      });
       handleApiError(error);
       setLoading(false);
     }
   };
+
+  // Додаємо state для редагування календарних подій
+  const [selectedCalendarEvent, setSelectedCalendarEvent] =
+    useState<CalendarEvent | null>(null);
+  const [openEditCalendarModal, setOpenEditCalendarModal] = useState(false);
+
+  // Функція для конвертації календарної події в формат таблиці
+  const convertCalendarEventToTableFormat = (
+    event: CalendarEvent,
+    index: number,
+  ): CombinedTableData => {
+    // Знаходимо студента та вчителя за ID
+    const student = students.find((s) => s.id === event.student_id);
+    const teacher = teachers.find((t) => t.id === event.teacher_id);
+
+    // Конвертуємо час
+    let eventDate = "";
+    let startTime = "";
+
+    if (event.startDate) {
+      try {
+        const startDateTime = dayjs(event.startDate).tz(timezone);
+        eventDate = startDateTime.format("YYYY-MM-DD");
+        startTime = startDateTime.format("HH:mm");
+      } catch (error) {
+        console.error("Error parsing calendar event time:", error);
+      }
+    }
+
+    // Виправляємо проблему з teacher_name
+    let teacherName = "Unknown Teacher";
+
+    console.log("🔍 Teacher lookup for event:", {
+      eventId: event.id,
+      eventTeacherId: event.teacher_id,
+      eventTeacherIdType: typeof event.teacher_id,
+      eventTeacherName: event.teacher_name,
+      eventResourceId: event.resourceId,
+      eventResourceIdType: typeof event.resourceId,
+      availableTeachers: teachers.map((t) => ({
+        id: t.id,
+        name: `${t.first_name} ${t.last_name}`,
+      })),
+    });
+
+    // Спочатку перевіряємо чи є teacher_id і знаходимо вчителя в масиві teachers
+    if (event.teacher_id && teacher) {
+      teacherName = `${teacher.first_name} ${teacher.last_name}`;
+      console.log("✅ Found teacher by teacher_id:", teacherName);
+    }
+    // Якщо немає teacher_id або вчителя в масиві, перевіряємо teacher_name з події
+    else if (event.teacher_name && event.teacher_name !== "Unknown Teacher") {
+      teacherName = event.teacher_name;
+      console.log("✅ Using teacher_name from event:", teacherName);
+    }
+    // Якщо є resourceId, спробуємо знайти вчителя за ним
+    else if (event.resourceId) {
+      // Конвертуємо resourceId в число для порівняння
+      const resourceIdNum = parseInt(String(event.resourceId));
+      const resourceTeacher = teachers.find((t) => t.id === resourceIdNum);
+      if (resourceTeacher) {
+        teacherName = `${resourceTeacher.first_name} ${resourceTeacher.last_name}`;
+        console.log(
+          "✅ Found teacher by resourceId:",
+          teacherName,
+          "resourceId:",
+          resourceIdNum,
+        );
+      } else {
+        console.log(
+          "❌ No teacher found by resourceId:",
+          resourceIdNum,
+          "available teacher IDs:",
+          teachers.map((t) => t.id),
+        );
+      }
+    } else {
+      console.log("❌ No teacher found - all methods failed");
+    }
+
+    // Виправляємо проблему з student_name
+    let studentName = "Unknown Student";
+
+    // Спочатку перевіряємо чи є student_id і знаходимо студента в масиві students
+    if (event.student_id && student) {
+      studentName = `${student.first_name} ${student.last_name}`;
+    }
+    // Якщо немає student_id або студента в масиві, перевіряємо student_name_text з події
+    else if (
+      event.student_name_text &&
+      event.student_name_text !== "Unknown Student"
+    ) {
+      studentName = event.student_name_text;
+    }
+    // Якщо є name з події і це не "Unknown Student"
+    else if (event.name && event.name !== "Unknown Student") {
+      studentName = event.name;
+    }
+
+    console.log("🔍 Calendar event conversion:", {
+      eventId: event.id,
+      teacher_id: event.teacher_id,
+      teacher_name: event.teacher_name,
+      resourceId: event.resourceId,
+      foundTeacher: teacher,
+      finalTeacherName: teacherName,
+      student_id: event.student_id,
+      student_name_text: event.student_name_text,
+      name: event.name,
+      foundStudent: student,
+      finalStudentName: studentName,
+    });
+
+    return {
+      key: index,
+      id: event.id,
+      type: "calendar_event",
+      lesson_date: eventDate,
+      student_name: studentName,
+      teacher_name: teacherName,
+      class_type: event.class_type || "Unknown Type",
+      start_time: startTime,
+      class_status: event.class_status || "scheduled",
+      source: "calendar",
+      original: event,
+    };
+  };
+
+  // Функція для конвертації уроку в формат таблиці
+  const convertLessonToTableFormat = (
+    lesson: Lesson,
+    index: number,
+  ): CombinedTableData => {
+    let lessonDate = lesson.lesson_date || "";
+
+    return {
+      key: index,
+      id: lesson.id,
+      type: "lesson",
+      lesson_date: lessonDate,
+      student_name: lesson.Student
+        ? `${lesson.Student.first_name} ${lesson.Student.last_name}`
+        : "Unknown Student",
+      teacher_name: lesson.Teacher
+        ? `${lesson.Teacher.first_name} ${lesson.Teacher.last_name}`
+        : "Unknown Teacher",
+      class_type: lesson.class_type ? lesson.class_type.name : "Unknown Type",
+      start_time:
+        typeof lesson.start_time === "string" ? lesson.start_time : "",
+      class_status: lesson.class_status || "",
+      source: "lessons",
+      original: lesson,
+    };
+  };
+
+  // Оновлюємо tableData для об'єднання уроків та календарних подій
+  const tableData = useMemo(() => {
+    console.log("🔄 Recalculating tableData:", {
+      lessonsCount: lessons.length,
+      calendarEventsCount: calendarEvents.length,
+      teachersCount: teachers.length,
+      studentsCount: students.length,
+    });
+
+    // Фільтруємо уроки
+    const filteredLessons = lessons.filter((lesson) => {
+      if (auth.user?.role === "student") {
+        return lesson.Student?.id === parseInt(auth.user.id);
+      }
+      if (auth.user?.role === "teacher") {
+        return lesson.Teacher?.id === parseInt(auth.user.id);
+      }
+      return true;
+    });
+
+    // Фільтруємо календарні події
+    const filteredCalendarEvents = calendarEvents.filter((event) => {
+      // Виключаємо unavailable та scheduled події
+      if (
+        event.class_type === "Unavailable" ||
+        event.class_type === "unavailable" ||
+        event.class_status === "Unavailable" ||
+        event.class_status === "unavailable" ||
+        event.class_status === "Not Available" ||
+        event.class_type === "Scheduled" ||
+        event.class_type === "scheduled" ||
+        event.class_status === "Scheduled" ||
+        event.class_status === "scheduled"
+      ) {
+        console.log("🚫 Filtering out unavailable/scheduled event:", event.id);
+        return false;
+      }
+
+      if (auth.user?.role === "student") {
+        return event.student_id === parseInt(auth.user.id);
+      }
+      if (auth.user?.role === "teacher") {
+        return event.teacher_id === parseInt(auth.user.id);
+      }
+      return true;
+    });
+
+    // Конвертуємо в загальний формат
+    const convertedLessons = filteredLessons.map((lesson, index) =>
+      convertLessonToTableFormat(lesson, index),
+    );
+
+    const convertedCalendarEvents = filteredCalendarEvents.map((event, index) =>
+      convertCalendarEventToTableFormat(event, index + filteredLessons.length),
+    );
+
+    // Об'єднуємо всі дані
+    const allData = [...convertedLessons, ...convertedCalendarEvents];
+
+    // Сортуємо за датою та часом (найновіші спочатку)
+    return allData.sort((a, b) => {
+      const aDate = new Date(a.lesson_date || "0000-01-01");
+      const bDate = new Date(b.lesson_date || "0000-01-01");
+
+      if (aDate.getTime() === bDate.getTime()) {
+        const aTime = a.start_time || "00:00";
+        const bTime = b.start_time || "00:00";
+        return bTime.localeCompare(aTime);
+      }
+
+      return bDate.getTime() - aDate.getTime();
+    });
+  }, [lessons, calendarEvents, students, teachers, auth.user, timezone]);
 
   const createLesson = async () => {
     if (
       !classDate ||
       !selectedStudent ||
       !selectedTeacher ||
-      !selectedClassType ||
-      !startTime ||
-      !endTime
+      !selectedClassType
     ) {
-      toast.error("Please fill all required fields.", { theme: "dark" });
+      toast.error("All fields are required.", { theme: "dark" });
       return;
     }
-    setLoading(true);
 
     try {
-      const startDateTime = convertTimeToDbTimezone(
-        `${classDate} ${startTime}`,
-        timezone
-      );
-      const endDateTime = convertTimeToDbTimezone(
-        `${classDate} ${endTime}`,
-        timezone
-      );
-
+      // Prepare lesson data with time information
       const lessonData = {
-        lesson_date: classDate,
-        start_time: startTime,
-        end_time: endTime,
+        class_date: classDate,
         student_id: selectedStudent,
         teacher_id: selectedTeacher,
         class_type_id: selectedClassType,
         pay_state: payState,
-        start_date: startDateTime,
-        end_date: endDateTime,
-        class_status: "Scheduled", // Default status
+        class_status: classStatus || null,
       };
 
-      await api.post("/lessons", lessonData);
+      // Add time information
+      const lessonWithTime = prepareTimeData(lessonData, startTime, endTime);
 
-      toast.success("Lesson created successfully!", { theme: "colored" });
+      console.log("Sending lesson data:", lessonWithTime);
+      const res = await api.post("/lessons", lessonWithTime);
+
+      const updatedLessons = res.data.lessons || [];
+      setLessons(updatedLessons);
+
+      // 🔄 СИНХРОНІЗАЦІЯ: Створюємо подію в календарі
+      const newLesson = updatedLessons[updatedLessons.length - 1];
+      if (newLesson) {
+        try {
+          console.log("🔄 Creating calendar event for lesson:", {
+            lessonId: newLesson.id,
+            studentId: selectedStudent,
+            teacherId: selectedTeacher,
+            classTypeId: selectedClassType,
+            lessonDate: classDate,
+            startTime,
+            endTime,
+          });
+
+          // Знаходимо дані студента та вчителя
+          const student = students.find(
+            (s) => s.id === parseInt(selectedStudent),
+          );
+          const teacher = teachers.find(
+            (t) => t.id === parseInt(selectedTeacher),
+          );
+          const classType = classTypes.find(
+            (ct) => ct.id === parseInt(selectedClassType),
+          );
+
+          // Підготовка даних для календаря
+          const calendarData = {
+            class_type: classType?.name?.toLowerCase() || "regular",
+            student_id: parseInt(selectedStudent),
+            teacher_id: parseInt(selectedTeacher),
+            class_status: classStatus || "scheduled",
+            payment_status: payState ? "paid" : "reserved",
+            startDate: `${classDate}T${startTime}:00`,
+            endDate: `${classDate}T${endTime}:00`,
+            name: student
+              ? `${student.first_name} ${student.last_name}`
+              : "Unknown Student",
+            student_name_text: student
+              ? `${student.first_name} ${student.last_name}`
+              : "Unknown Student",
+            teacher_name: teacher
+              ? `${teacher.first_name} ${teacher.last_name}`
+              : "Unknown Teacher",
+          };
+
+          console.log("📤 Sending calendar data:", calendarData);
+
+          // Конвертація в UTC для збереження
+          const startDate = dayjs.tz(calendarData.startDate, timezone);
+          const endDate = dayjs.tz(calendarData.endDate, timezone);
+
+          const calendarEventData = {
+            ...calendarData,
+            startDate: startDate.utc().format(),
+            endDate: endDate.utc().format(),
+          };
+
+          const calendarResponse = await api.post("/calendar/events", {
+            events: { added: [calendarEventData] },
+          });
+
+          console.log(
+            "✅ Calendar event created successfully:",
+            calendarResponse.data,
+          );
+        } catch (error) {
+          console.error("❌ Error creating calendar event for lesson:", error);
+          console.error("Error details:", {
+            message: error.message,
+            response: error.response?.data,
+            status: error.response?.status,
+          });
+        }
+      }
+
+      // Reset form
+      setClassDate("");
+      setSelectedStudent("");
+      setSelectedTeacher("");
+      setSelectedClassType("");
+      setPayState(false);
+      setClassStatus("");
+      setStartTime("");
+      setEndTime("");
       setOpenModal(false);
-      fetchClasses(); // Refresh the list
+
+      toast.success("Lesson added successfully!", { theme: "dark" });
+
+      // 🔄 ГЛОБАЛЬНА СИНХРОНІЗАЦІЯ
+      triggerGlobalSync("ClassManage-create", { newLesson });
+
+      // Оновлюємо календарні події після створення уроку
+      await fetchClasses();
     } catch (error: any) {
+      console.error("Error creating lesson:", error);
       handleApiError(error);
-    } finally {
-      setLoading(false);
     }
   };
 
   const deleteLesson = async (id: number) => {
     try {
-      // Find the lesson to check if it's a Training type
+      // Зберігаємо дані уроку перед видаленням для синхронізації
       const lessonToDelete = lessons.find((lesson) => lesson.id === id);
-      if (
-        lessonToDelete?.class_type.name === "Training" &&
-        !hasTrainingAccess()
-      ) {
-        toast.error("You don't have permission to delete Training classes.", {
-          theme: "dark",
-        });
-        return;
-      }
 
       await api.delete(`/lessons/${id}`);
       setLessons((prevLessons) =>
-        prevLessons.filter((lesson) => lesson.id !== id)
+        prevLessons.filter((lesson) => lesson.id !== id),
       );
+
+      // 🔄 СИНХРОНІЗАЦІЯ: Видаляємо подію з календаря
+      if (lessonToDelete) {
+        try {
+          await api.delete(`/calendar/events/${id}`);
+          console.log("✅ Calendar event deleted for lesson");
+        } catch (error) {
+          console.log("ℹ️ No calendar event found to delete for lesson");
+        }
+      }
+
       toast.success("Lesson deleted successfully!", { theme: "dark" });
+
+      // 🔄 ГЛОБАЛЬНА СИНХРОНІЗАЦІЯ
+      triggerGlobalSync("ClassManage-delete", { id, lesson: lessonToDelete });
+
+      // Оновлюємо календарні події після видалення уроку
+      await fetchClasses();
     } catch (error: any) {
+      console.error("Error deleting lesson:", error);
       handleApiError(error);
     }
   };
 
   const openEditLesson = (lesson: Lesson) => {
-    console.log("Opening edit modal for lesson:", lesson);
-    try {
-      setSelectedLesson(lesson);
-      const lessonDate = dayjs(lesson.lesson_date).format("YYYY-MM-DD");
-      setClassDate(lessonDate);
+    setSelectedLesson(lesson);
+    setClassDate(lesson.lesson_date);
+    setSelectedStudent(lesson.Student.id.toString());
+    setSelectedTeacher(lesson.Teacher.id.toString());
+    setSelectedClassType(lesson.class_type.id.toString());
+    setPayState(lesson.pay_state);
+    setClassStatus(lesson.class_status || "");
 
-      // Manually handle timezone conversion to be safe
+    try {
+      // Get start time and convert from DB timezone to user timezone
       if (lesson.start_time) {
-        const dbDateTime = dayjs.tz(
-          `${lesson.lesson_date}T${lesson.start_time}`,
-          DEFAULT_DB_TIMEZONE
+        const userTimeString = convertTimeToUserTimezone(
+          lesson.start_time,
+          timezone,
         );
-        const userDateTime = dbDateTime.tz(timezone);
-        setStartTime(userDateTime.format("HH:mm"));
+        if (userTimeString) {
+          // Format as HH:MM for the time input field
+          const timePart = userTimeString.substring(0, 5);
+          setStartTime(timePart);
+        } else {
+          setStartTime("");
+        }
       } else {
         setStartTime("");
       }
 
+      // Get end time and convert from DB timezone to user timezone
       if (lesson.end_time) {
-        const dbDateTime = dayjs.tz(
-          `${lesson.lesson_date}T${lesson.end_time}`,
-          DEFAULT_DB_TIMEZONE
+        const userTimeString = convertTimeToUserTimezone(
+          lesson.end_time,
+          timezone,
         );
-        const userDateTime = dbDateTime.tz(timezone);
-        setEndTime(userDateTime.format("HH:mm"));
+        if (userTimeString) {
+          // Format as HH:MM for the time input field
+          const timePart = userTimeString.substring(0, 5);
+          setEndTime(timePart);
+        } else {
+          setEndTime("");
+        }
       } else {
         setEndTime("");
       }
-
-      setSelectedStudent(String(lesson.Student.id));
-      setSelectedTeacher(String(lesson.Teacher.id));
-      setSelectedClassType(String(lesson.class_type.id));
-      setClassStatus(lesson.class_status || "");
-      setPayState(lesson.pay_state || false);
-
-      console.log("State updated, opening modal.");
-      setOpenEditModal(true);
     } catch (error) {
-      console.error("Error in openEditLesson:", error);
-      toast.error("Could not open the edit modal due to an error.", {
-        theme: "dark",
-      });
+      console.error("Error setting time values:", error);
+      // Set default values in case of error
+      setStartTime("");
+      setEndTime("");
     }
+
+    setOpenEditModal(true);
   };
 
   const updateLesson = async () => {
     if (!selectedLesson) return;
 
     try {
-      // Create date objects in user's timezone
-      const startDateTimeUser = dayjs.tz(`${classDate}T${startTime}`, timezone);
-      const endDateTimeUser = dayjs.tz(`${classDate}T${endTime}`, timezone);
-
-      // Convert to DB timezone for sending to backend
-      const startDateTimeDb = startDateTimeUser
-        .tz(DEFAULT_DB_TIMEZONE)
-        .format("HH:mm:ss");
-      const endDateTimeDb = endDateTimeUser
-        .tz(DEFAULT_DB_TIMEZONE)
-        .format("HH:mm:ss");
-      const lessonDateDb = startDateTimeUser
-        .tz(DEFAULT_DB_TIMEZONE)
-        .format("YYYY-MM-DD");
-
-      const lessonData: any = {
-        lesson_date: lessonDateDb,
-        start_time: startDateTimeDb,
-        end_time: endDateTimeDb,
+      // Prepare lesson data with time information
+      const lessonData = {
+        class_date: classDate,
         student_id: selectedStudent,
         teacher_id: selectedTeacher,
         class_type_id: selectedClassType,
         pay_state: payState,
+        class_status: classStatus || null,
       };
-      if (classStatus) {
-        lessonData.class_status = classStatus;
+
+      // Add time information
+      const lessonWithTime = prepareTimeData(lessonData, startTime, endTime);
+
+      console.log("Updating lesson with data:", lessonWithTime);
+      const res = await api.put(
+        `/lessons/${selectedLesson.id}`,
+        lessonWithTime,
+      );
+
+      const updatedLessons = res.data.lessons || [];
+      setLessons(updatedLessons);
+
+      // 🔄 СИНХРОНІЗАЦІЯ: Оновлюємо подію в календарі
+      const updatedLesson = updatedLessons.find(
+        (l: any) => l.id === selectedLesson.id,
+      );
+      if (updatedLesson) {
+        try {
+          console.log("🔄 Updating calendar event for lesson:", {
+            lessonId: selectedLesson.id,
+            studentId: selectedStudent,
+            teacherId: selectedTeacher,
+            classTypeId: selectedClassType,
+            lessonDate: classDate,
+            startTime,
+            endTime,
+          });
+
+          // Знаходимо дані студента та вчителя
+          const student = students.find(
+            (s) => s.id === parseInt(selectedStudent),
+          );
+          const teacher = teachers.find(
+            (t) => t.id === parseInt(selectedTeacher),
+          );
+          const classType = classTypes.find(
+            (ct) => ct.id === parseInt(selectedClassType),
+          );
+
+          // Підготовка даних для календаря
+          const calendarData = {
+            id: selectedLesson.id,
+            class_type: classType?.name?.toLowerCase() || "regular",
+            student_id: parseInt(selectedStudent),
+            teacher_id: parseInt(selectedTeacher),
+            class_status: classStatus || "scheduled",
+            payment_status: payState ? "paid" : "reserved",
+            start_date: `${classDate}T${startTime}:00`,
+            end_date: `${classDate}T${endTime}:00`,
+          };
+
+          console.log("📤 Sending calendar update data:", calendarData);
+
+          // Конвертація в UTC для збереження
+          const startDate = dayjs.tz(calendarData.start_date, timezone);
+          const endDate = dayjs.tz(calendarData.end_date, timezone);
+
+          const calendarEventData = {
+            ...calendarData,
+            start_date: startDate.utc().format(),
+            end_date: endDate.utc().format(),
+          };
+
+          const calendarResponse = await api.put(
+            `/calendar/events/${selectedLesson.id}`,
+            calendarEventData,
+          );
+          console.log(
+            "✅ Calendar event updated successfully:",
+            calendarResponse.data,
+          );
+        } catch (error) {
+          console.error("❌ Error updating calendar event for lesson:", error);
+          console.error("Error details:", {
+            message: error.message,
+            response: error.response?.data,
+            status: error.response?.status,
+          });
+        }
       }
 
-      await api.put(`/lessons/${selectedLesson.id}`, lessonData);
-      toast.success("Lesson updated successfully!", { theme: "colored" });
       setOpenEditModal(false);
-      fetchClasses();
+      setSelectedLesson(null);
+      toast.success("Lesson updated successfully!", { theme: "dark" });
+
+      // 🔄 ГЛОБАЛЬНА СИНХРОНІЗАЦІЯ
+      triggerGlobalSync("ClassManage-update", { updatedLesson });
+
+      // Оновлюємо календарні події після оновлення уроку
+      await fetchClasses();
     } catch (error: any) {
+      console.error("Error updating lesson:", error);
       handleApiError(error);
     }
   };
@@ -438,205 +843,542 @@ const ClassManage: React.FC = () => {
     }
   };
 
+  // Оновлюємо функцію downloadCSV для включення календарних подій
   const downloadCSV = () => {
-    if (lessons.length === 0) {
+    if (tableData.length === 0) {
       toast.error("No class data available to download.", { theme: "dark" });
       return;
     }
 
-    // Convert lessons data to CSV format
-    const csvData = lessons.map((lesson) => {
-      // Process calendar link dates with timezone
-      const startDate = lesson.CalendarLink?.startDate
-        ? dayjs(lesson.CalendarLink.startDate)
-            .tz(timezone)
-            .format("DD.MM.YYYY HH:mm")
-        : "-";
-      const endDate = lesson.CalendarLink?.endDate
-        ? dayjs(lesson.CalendarLink.endDate)
-            .tz(timezone)
-            .format("DD.MM.YYYY HH:mm")
-        : "-";
-
-      // Process start time and adjust date if needed
-      let adjustedDate = lesson.lesson_date;
+    const csvData = tableData.map((item) => {
+      let formattedDate = "-";
       let formattedStartTime = "-";
-      let formattedEndTime = "-";
 
-      if (lesson.start_time) {
-        const userStartTime = convertTimeToUserTimezone(
-          lesson.start_time,
-          timezone
-        );
-        if (userStartTime) {
-          formattedStartTime = formatTime(userStartTime, "HH:mm");
-
-          // Adjust date if needed
-          const dayShift = getDayShift(
-            lesson.start_time,
-            DEFAULT_DB_TIMEZONE,
-            timezone
+      if (item.lesson_date) {
+        if (item.source === "lessons" && item.start_time) {
+          const userStartTime = convertTimeToUserTimezone(
+            item.start_time,
+            timezone,
           );
-          if (dayShift !== 0 && lesson.lesson_date) {
-            adjustedDate = dayjs(lesson.lesson_date)
-              .add(dayShift, "day")
-              .format("YYYY-MM-DD");
+          if (userStartTime) {
+            formattedStartTime = formatTime(userStartTime, "HH:mm");
+            const dayShift = getDayShift(
+              item.start_time,
+              DEFAULT_DB_TIMEZONE,
+              timezone,
+            );
+            if (dayShift !== 0) {
+              const adjustedDate = dayjs(item.lesson_date)
+                .add(dayShift, "day")
+                .format("YYYY-MM-DD");
+              formattedDate = dayjs(adjustedDate).format("DD.MM.YYYY");
+            } else {
+              formattedDate = dayjs(item.lesson_date).format("DD.MM.YYYY");
+            }
           }
+        } else {
+          formattedDate = dayjs(item.lesson_date).format("DD.MM.YYYY");
+          formattedStartTime = item.start_time || "-";
         }
       }
-
-      // Process end time
-      if (lesson.end_time) {
-        const userEndTime = convertTimeToUserTimezone(
-          lesson.end_time,
-          timezone
-        );
-        if (userEndTime) {
-          formattedEndTime = formatTime(userEndTime, "HH:mm");
-        }
-      }
-
-      // Format the date in DD.MM.YYYY format
-      const formattedDate = adjustedDate
-        ? dayjs(adjustedDate).format("DD.MM.YYYY")
-        : "-";
 
       return {
+        Source: item.source === "lessons" ? "Lesson" : "Calendar Event",
         "Class Date": formattedDate,
         "Start Time": formattedStartTime,
-        "End Time": formattedEndTime,
-        "Start Date/Time": startDate,
-        "End Date/Time": endDate,
-        "Student Name": `${lesson.Student.first_name} ${lesson.Student.last_name}`,
-        "Teacher Name": `${lesson.Teacher.first_name} ${lesson.Teacher.last_name}`,
-        "Class Type": lesson.class_type.name,
-        "Class Status": lesson.class_status || "-",
+        "Student Name": item.student_name,
+        "Teacher Name": item.teacher_name,
+        "Class Type": item.class_type,
+        "Class Status": item.class_status || "-",
         Timezone: timezone.replace(/_/g, " "),
       };
     });
 
-    // Convert to CSV string
     const csv = Papa.unparse(csvData);
-
-    // Create a blob and trigger the download
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = "class_data.csv";
+    link.download = "combined_class_data.csv";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  const columns: TableColumnsType<Lesson> = [
+  // Ця функція API'ye gönderilecek veriyi hazırlar
+  const prepareTimeData = (
+    lessonData: any,
+    startTimeValue: string,
+    endTimeValue: string,
+  ) => {
+    // Convert times to database timezone (PST)
+    const startTimeDb = startTimeValue
+      ? convertTimeToDbTimezone(startTimeValue, timezone)
+      : null;
+
+    const endTimeDb = endTimeValue
+      ? convertTimeToDbTimezone(endTimeValue, timezone)
+      : null;
+
+    // Check if we need to adjust the date due to timezone differences
+    let classDateStr = lessonData.class_date;
+    if (startTimeValue) {
+      const dayShift = getDayShift(
+        startTimeValue,
+        timezone,
+        DEFAULT_DB_TIMEZONE,
+      );
+      if (dayShift !== 0) {
+        // Adjust the date by the number of days shifted
+        classDateStr = dayjs(lessonData.class_date)
+          .add(dayShift, "day")
+          .format("YYYY-MM-DD");
+      }
+    }
+
+    return {
+      ...lessonData,
+      class_date: classDateStr,
+      start_time: startTimeDb,
+      end_time: endTimeDb,
+    };
+  };
+
+  // Оновлюємо колонки таблиці
+  const columns: TableColumnsType<CombinedTableData> = [
+    {
+      title: "No",
+      dataIndex: "index",
+      key: "index",
+      width: "8%",
+      fixed: "left",
+      render: (_: any, __: any, index: number) => (
+        <span className="font-medium text-gray-600 dark:text-gray-400">
+          {index + 1}
+        </span>
+      ),
+    },
     {
       title: "Date",
       dataIndex: "lesson_date",
       key: "lesson_date",
-      render: (text) => dayjs(text).format("YYYY-MM-DD"),
-    },
-    {
-      title: "Student",
-      key: "student",
-      render: (_, record) =>
-        `${record.Student.first_name} ${record.Student.last_name}`,
-    },
-    {
-      title: "Teacher",
-      key: "teacher",
-      render: (_, record) =>
-        `${record.Teacher.first_name} ${record.Teacher.last_name}`,
+      render: (text: string, record: CombinedTableData) => {
+        if (!text) {
+          return (
+            <span className="font-medium text-gray-400 dark:text-gray-500">
+              --.--.----
+            </span>
+          );
+        }
+
+        let adjustedDate = text;
+        if (record.start_time && record.source === "lessons") {
+          const dayShift = getDayShift(
+            record.start_time,
+            DEFAULT_DB_TIMEZONE,
+            timezone,
+          );
+          if (dayShift !== 0) {
+            adjustedDate = dayjs(text)
+              .add(dayShift, "day")
+              .format("YYYY-MM-DD");
+          }
+        }
+
+        return (
+          <span className="font-medium text-gray-900 dark:text-white">
+            {dayjs(adjustedDate).format("DD.MM.YYYY")}
+          </span>
+        );
+      },
+      sorter: (a: CombinedTableData, b: CombinedTableData) => {
+        const aDate = new Date(a.lesson_date || "0000-01-01");
+        const bDate = new Date(b.lesson_date || "0000-01-01");
+
+        if (aDate.getTime() === bDate.getTime()) {
+          const aTime = a.start_time || "00:00";
+          const bTime = b.start_time || "00:00";
+          return bTime.localeCompare(aTime);
+        }
+
+        return bDate.getTime() - aDate.getTime();
+      },
     },
     {
       title: "Start Time",
       dataIndex: "start_time",
       key: "start_time",
-      render: (text, record) => {
-        const userTime = convertTimeToUserTimezone(
-          `${record.lesson_date}T${record.start_time}`,
-          timezone
-        );
-        return userTime ? dayjs(userTime, "HH:mm:ss").format("HH:mm") : "-";
+      width: "12%",
+      render: (text: string, record: CombinedTableData) => {
+        if (!text) {
+          return (
+            <span className="font-medium text-gray-400 dark:text-gray-500">
+              --:--
+            </span>
+          );
+        }
+
+        try {
+          if (record.source === "calendar") {
+            // Для календарних подій час вже в правильному форматі
+            return (
+              <span className="font-medium text-blue-600 dark:text-blue-400">
+                {text}
+              </span>
+            );
+          } else {
+            // Для уроків використовуємо існуючу логіку
+            const today = dayjs().format("YYYY-MM-DD");
+            const fullDateTime = `${today} ${text}`;
+            const timeObj = dayjs(fullDateTime);
+
+            if (timeObj.isValid()) {
+              return (
+                <span className="font-medium text-blue-600 dark:text-blue-400">
+                  {timeObj.format("HH:mm")}
+                </span>
+              );
+            } else {
+              const userTime = convertTimeToUserTimezone(text, timezone);
+              if (!userTime) {
+                return (
+                  <span className="font-medium text-gray-400 dark:text-gray-500">
+                    --:--
+                  </span>
+                );
+              }
+              return (
+                <span className="font-medium text-blue-600 dark:text-blue-400">
+                  {formatTime(userTime, "HH:mm")}
+                </span>
+              );
+            }
+          }
+        } catch (error) {
+          console.error("Error formatting time:", error, "time:", text);
+          return (
+            <span className="font-medium text-gray-400 dark:text-gray-500">
+              --:--
+            </span>
+          );
+        }
       },
     },
     {
-      title: "End Time",
-      dataIndex: "end_time",
-      key: "end_time",
-      render: (text, record) => {
-        const userTime = convertTimeToUserTimezone(
-          `${record.lesson_date}T${record.end_time}`,
-          timezone
-        );
-        return userTime ? dayjs(userTime, "HH:mm:ss").format("HH:mm") : "-";
-      },
+      title: "Student",
+      dataIndex: "student_name",
+      key: "student_name",
+      fixed: "left",
+      sorter: (a: CombinedTableData, b: CombinedTableData) =>
+        a.student_name.localeCompare(b.student_name),
+      filters:
+        auth.user?.role !== "student"
+          ? students
+              .map((student) => ({
+                text: `${student.first_name} ${student.last_name}`,
+                value: `${student.first_name} ${student.last_name}`,
+              }))
+              .sort((a, b) => a.text.localeCompare(b.text))
+          : undefined,
+      onFilter: (value: any, record: CombinedTableData) =>
+        record.student_name.includes(value),
+      render: (text: string) => (
+        <span className="font-medium text-gray-900 dark:text-white">
+          {text}
+        </span>
+      ),
+    },
+    {
+      title: "Teacher",
+      dataIndex: "teacher_name",
+      key: "teacher_name",
+      sorter: (a: CombinedTableData, b: CombinedTableData) =>
+        a.teacher_name.localeCompare(b.teacher_name),
+      filters:
+        auth.user?.role !== "teacher"
+          ? teachers
+              .map((teacher) => ({
+                text: `${teacher.first_name} ${teacher.last_name}`,
+                value: `${teacher.first_name} ${teacher.last_name}`,
+              }))
+              .sort((a, b) => a.text.localeCompare(b.text))
+          : undefined,
+      onFilter: (value: any, record: CombinedTableData) =>
+        record.teacher_name.includes(value),
+      render: (text: string) => (
+        <span className="font-medium text-gray-900 dark:text-white">
+          {text}
+        </span>
+      ),
     },
     {
       title: "Class Type",
-      dataIndex: ["class_type", "name"],
+      dataIndex: "class_type",
       key: "class_type",
+      sorter: (a: CombinedTableData, b: CombinedTableData) =>
+        a.class_type.localeCompare(b.class_type),
+      filters: [
+        { text: "Regular", value: "regular" },
+        { text: "Trial", value: "trial" },
+        { text: "Training", value: "training" },
+        { text: "Instant", value: "instant" },
+        { text: "Group", value: "group" },
+      ],
+      onFilter: (value: any, record: CombinedTableData) => {
+        const classType = record.class_type.toLowerCase();
+        const filterValue = value.toLowerCase();
+
+        // Створюємо мапінг для різних варіантів назв
+        const classTypeVariants: { [key: string]: string[] } = {
+          regular: ["regular", "regular-lesson", "regular lesson"],
+          trial: ["trial", "trial-lesson", "trial lesson"],
+          training: ["training", "training-lesson", "training lesson"],
+          instant: ["instant", "instant-lesson", "instant lesson"],
+          group: ["group", "group-lesson", "group lesson"],
+        };
+
+        // Перевіряємо чи поточний class_type відповідає одному з варіантів
+        const variants = classTypeVariants[filterValue] || [filterValue];
+        return variants.some(
+          (variant) =>
+            classType.includes(variant) ||
+            classType === variant ||
+            classType.replace("-", " ") === variant ||
+            classType.replace(" ", "-") === variant,
+        );
+      },
+      render: (text: string) => (
+        <span className="font-medium text-gray-900 dark:text-white">
+          {text}
+        </span>
+      ),
     },
     {
-      title: "Status",
+      title: "Class Status",
       dataIndex: "class_status",
       key: "class_status",
-      render: (status) => (
-        <span className={getStatusColor(status || "")}>{status}</span>
-      ),
-    },
-    {
-      title: "Actions",
-      key: "actions",
-      render: (_, record) => (
-        <Space size="middle">
-          <AntButton
-            icon={<EditOutlined />}
-            onClick={() => openEditLesson(record)}
-            disabled={!permissions.update}
-          />
-          <AntButton
-            icon={<DeleteOutlined />}
-            onClick={() => deleteLesson(record.id)}
-            disabled={!permissions.delete}
-          />
-        </Space>
-      ),
+      width: "15%",
+      filters: filteredClassStatusOptions.map((option) => ({
+        text: option.label,
+        value: option.value,
+      })),
+      onFilter: (value: any, record: CombinedTableData) =>
+        record.class_status === value,
+      render: (text: string) => {
+        if (!text) {
+          return <span className="font-medium text-gray-500">-</span>;
+        }
+        return (
+          <span
+            className={`font-medium ${
+              text === "Cancelled"
+                ? "text-red-500"
+                : text === "Given"
+                  ? "text-green-500"
+                  : "text-yellow-500"
+            }`}
+          >
+            {text}
+          </span>
+        );
+      },
     },
   ];
 
-  const tableData = lessons
-    .filter((lesson) => {
-      if (auth.user?.role?.role_name === "student") {
-        return lesson.Student?.id === Number(auth.user.id);
-      }
-      if (auth.user?.role?.role_name === "teacher") {
-        return lesson.Teacher?.id === Number(auth.user.id);
-      }
-      return true;
-    })
-    .map((lesson, index) => ({
-      key: index,
-      id: lesson.id,
-      lesson_date: lesson.lesson_date,
-      student_name: lesson.Student
-        ? `${lesson.Student.first_name} ${lesson.Student.last_name}`
-        : "Unknown Student",
-      teacher_name: lesson.Teacher
-        ? `${lesson.Teacher.first_name} ${lesson.Teacher.last_name}`
-        : "Unknown Teacher",
-      class_status: lesson.class_status || "",
-    }));
+  // Функції для роботи з календарними подіями
+  const openEditCalendarEvent = (event: CalendarEvent) => {
+    console.log("Opening calendar event for edit:", event);
+    setSelectedCalendarEvent(event);
 
-  console.log("Filtered and mapped table data:", {
-    originalLessonsCount: lessons.length,
-    filteredTableDataCount: tableData.length,
-    userRole: auth.user?.role,
-    userId: auth.user?.id,
+    // Конвертуємо дату та час календарної події
+    if (event.startDate) {
+      const startDateTime = dayjs(event.startDate).tz(timezone);
+      setClassDate(startDateTime.format("YYYY-MM-DD"));
+      setStartTime(startDateTime.format("HH:mm"));
+
+      // Якщо є endDate, використовуємо його для end time
+      if (event.endDate) {
+        const endDateTime = dayjs(event.endDate).tz(timezone);
+        setEndTime(endDateTime.format("HH:mm"));
+      } else {
+        // За замовчуванням додаємо 50 хвилин
+        setEndTime(startDateTime.add(50, "minute").format("HH:mm"));
+      }
+    }
+
+    // Встановлюємо студента
+    if (event.student_id) {
+      setSelectedStudent(event.student_id.toString());
+    } else {
+      setSelectedStudent("");
+    }
+
+    // Встановлюємо вчителя
+    if (event.teacher_id) {
+      setSelectedTeacher(event.teacher_id.toString());
+    } else {
+      setSelectedTeacher("");
+    }
+
+    // Встановлюємо тип класу - конвертуємо з calendar формату в lesson формат
+    const classTypeMapping: { [key: string]: string } = {
+      trial: "1",
+      regular: "2",
+      training: "3",
+      instant: "2",
+      group: "2",
+    };
+
+    const mappedClassType =
+      classTypeMapping[event.class_type?.toLowerCase()] || "";
+    setSelectedClassType(mappedClassType);
+
+    // Встановлюємо статус
+    setClassStatus(event.class_status || "");
+
+    // Встановлюємо payment status як payState
+    setPayState(event.payment_status === "paid");
+
+    setOpenEditCalendarModal(true);
+  };
+
+  const updateCalendarEvent = async () => {
+    if (!selectedCalendarEvent) return;
+
+    try {
+      // Підготовка даних для оновлення календарної події
+      const startDateTime = `${classDate}T${startTime}:00`;
+      const endDateTime = `${classDate}T${endTime}:00`;
+
+      // Конвертація в UTC для збереження
+      const startDate = dayjs.tz(startDateTime, timezone);
+      const endDate = dayjs.tz(endDateTime, timezone);
+
+      const calendarEventData = {
+        id: parseInt(selectedCalendarEvent.id),
+        start_date: startDate.utc().format(),
+        end_date: endDate.utc().format(),
+        class_status: classStatus || "scheduled",
+        student_id: selectedStudent ? parseInt(selectedStudent) : null,
+        teacher_id: selectedTeacher ? parseInt(selectedTeacher) : null,
+        // Конвертуємо class_type назад в calendar формат
+        class_type: (() => {
+          const reverseMapping: { [key: string]: string } = {
+            "1": "trial",
+            "2": "regular",
+            "3": "training",
+          };
+          return reverseMapping[selectedClassType] || "regular";
+        })(),
+        payment_status: payState ? "paid" : "reserved",
+      };
+
+      console.log("Updating calendar event with data:", calendarEventData);
+
+      const response = await api.put(
+        `/calendar/events/${selectedCalendarEvent.id}`,
+        calendarEventData,
+      );
+
+      console.log("✅ Calendar event updated successfully:", response.data);
+
+      setOpenEditCalendarModal(false);
+      setSelectedCalendarEvent(null);
+      toast.success("Calendar event updated successfully!", { theme: "dark" });
+
+      // Оновлюємо дані після редагування
+      await fetchClasses();
+    } catch (error: any) {
+      console.error("Error updating calendar event:", error);
+      handleApiError(error);
+    }
+  };
+
+  const deleteCalendarEvent = async (id: string) => {
+    try {
+      await api.delete(`/calendar/events/${id}`);
+      toast.success("Calendar event deleted successfully!", { theme: "dark" });
+
+      // Оновлюємо дані після видалення
+      await fetchClasses();
+    } catch (error: any) {
+      console.error("Error deleting calendar event:", error);
+      handleApiError(error);
+    }
+  };
+
+  // Додаємо колонки для дій для всіх типів подій
+  if (permissions.update || permissions.delete) {
+    columns.push({
+      title: "Action",
+      key: "action",
+      render: (_: any, record: CombinedTableData) => {
+        if (record.source === "lessons") {
+          // Дії для уроків
+          return (
+            <Space size="middle">
+              {permissions.update && (
+                <AntButton
+                  type="text"
+                  icon={<EditOutlined />}
+                  onClick={() => openEditLesson(record.original as Lesson)}
+                  style={{ color: "white" }}
+                  title="Edit Lesson"
+                />
+              )}
+              {permissions.delete && (
+                <AntButton
+                  type="text"
+                  icon={<DeleteOutlined />}
+                  onClick={() => deleteLesson(Number(record.id))}
+                  style={{ color: "#ef4444" }}
+                  title="Delete Lesson"
+                />
+              )}
+            </Space>
+          );
+        } else {
+          // Дії для календарних подій
+          return (
+            <Space size="middle">
+              {permissions.update && (
+                <AntButton
+                  type="text"
+                  icon={<EditOutlined />}
+                  onClick={() =>
+                    openEditCalendarEvent(record.original as CalendarEvent)
+                  }
+                  style={{ color: "#10b981" }}
+                  title="Edit Calendar Event"
+                />
+              )}
+              {permissions.delete && (
+                <AntButton
+                  type="text"
+                  icon={<DeleteOutlined />}
+                  onClick={() => deleteCalendarEvent(String(record.id))}
+                  style={{ color: "#ef4444" }}
+                  title="Delete Calendar Event"
+                />
+              )}
+            </Space>
+          );
+        }
+      },
+    });
+  }
+
+  // Додаємо логування для діагностики
+  console.log("📊 Combined table data:", {
+    totalItems: tableData.length,
+    lessons: tableData.filter((item) => item.source === "lessons").length,
+    calendarEvents: tableData.filter((item) => item.source === "calendar")
+      .length,
   });
 
-  if (loading || loading_1) {
-    return <LoadingSpinner />;
+  if (loading_1) {
+    return <LoadingSpinner></LoadingSpinner>;
   }
+
   const cardStyles = {
     header: {
       background: "linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)",
@@ -659,6 +1401,7 @@ const ClassManage: React.FC = () => {
       },
     },
   };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -672,7 +1415,7 @@ const ClassManage: React.FC = () => {
             <span className="text-lg font-semibold text-white">
               Class Manage
             </span>
-            <div className="size-2 animate-pulse rounded-full bg-green-400" />
+            <div className="h-2 w-2 animate-pulse rounded-full bg-green-400" />
           </div>
         }
         className="overflow-hidden rounded-xl border-0 shadow-lg transition-shadow hover:shadow-xl"
@@ -716,36 +1459,27 @@ const ClassManage: React.FC = () => {
           </div>
         }
       >
-        <div className="custom-table overflow-hidden rounded-lg shadow-md">
-          {tableData.length === 0 && !loading ? (
-            <div className="flex items-center justify-center p-8 text-gray-500">
-              <div className="text-center">
-                <p className="text-lg font-medium">No classes found</p>
-                <p className="text-sm">
-                  There are no classes available to display.
-                </p>
-                {auth.user?.role && (
-                  <p className="mt-2 text-xs">
-                    Current user role: {auth.user.role?.role_name}
-                    {auth.user.id && ` (ID: ${auth.user.id})`}
-                  </p>
-                )}
-              </div>
-            </div>
-          ) : (
-            <Table
-              style={{ width: "100%" }}
-              columns={columns as any}
-              dataSource={tableData}
-              loading={loading}
-              rowKey="id"
-              pagination={{
-                pageSize: 10,
-                showSizeChanger: true,
-                showQuickJumper: true,
-              }}
-            />
-          )}
+        <div className="custom-table overflow-hidden rounded-lg">
+          {/* Table with combined data from lessons and calendar events */}
+          <Table
+            style={{ width: "100%" }}
+            columns={columns}
+            dataSource={tableData}
+            pagination={{
+              pageSize: 50,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total, range) =>
+                `${range[0]}-${range[1]} of ${total} items`,
+            }}
+            loading={{
+              spinning: loading,
+              size: "large",
+            }}
+            scroll={{ x: "max-content", y: "calc(65vh - 200px)" }}
+            size="large"
+            className="custom-table"
+          />
         </div>
       </Card>
 
@@ -788,16 +1522,6 @@ const ClassManage: React.FC = () => {
                     className="w-full rounded-lg"
                   />
                 </div>
-                <div>
-                  <Label htmlFor="end_time" value="End Time" />
-                  <TextInput
-                    id="end_time"
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                    className="w-full rounded-lg"
-                  />
-                </div>
               </div>
 
               <div>
@@ -813,8 +1537,8 @@ const ClassManage: React.FC = () => {
                   {students
                     ?.sort((a, b) =>
                       `${a.first_name} ${a.last_name}`.localeCompare(
-                        `${b.first_name} ${b.last_name}`
-                      )
+                        `${b.first_name} ${b.last_name}`,
+                      ),
                     )
                     .map((student) => (
                       <option key={student.id} value={student.id}>
@@ -837,8 +1561,8 @@ const ClassManage: React.FC = () => {
                   {teachers
                     .sort((a, b) =>
                       `${a.first_name} ${a.last_name}`.localeCompare(
-                        `${b.first_name} ${b.last_name}`
-                      )
+                        `${b.first_name} ${b.last_name}`,
+                      ),
                     )
                     .map((teacher) => (
                       <option key={teacher.id} value={teacher.id}>
@@ -859,15 +1583,9 @@ const ClassManage: React.FC = () => {
                 >
                   <option value="">Select Class Type</option>
                   {classTypes
-                    .filter((classType) => {
-                      if (classType.name === "Training") {
-                        return (
-                          hasTrainingAccess() &&
-                          VALID_CLASS_TYPE_IDS.includes(classType.id)
-                        );
-                      }
-                      return VALID_CLASS_TYPE_IDS.includes(classType.id);
-                    })
+                    .filter((classType) =>
+                      VALID_CLASS_TYPE_IDS.includes(classType.id),
+                    )
                     .map((classType) => (
                       <option key={classType.id} value={classType.id}>
                         {classType.name}
@@ -914,117 +1632,315 @@ const ClassManage: React.FC = () => {
       )}
 
       {/* Edit Class Modal */}
-      <Modal show={openEditModal} onClose={() => setOpenEditModal(false)} popup>
-        <Modal.Header>Edit Class</Modal.Header>
-        <Modal.Body>
-          <div className="space-y-6">
-            <div>
-              <Label htmlFor="class-date" value="Class Date" />
-              <TextInput
-                id="class-date"
-                type="date"
-                value={classDate}
-                onChange={(e) => setClassDate(e.target.value)}
-                required
-              />
-            </div>
+      {permissions.update && (
+        <Modal
+          show={openEditModal}
+          size="md"
+          onClose={() => setOpenEditModal(false)}
+          popup
+          className="responsive-modal"
+        >
+          <Modal.Header className="border-b border-gray-200 dark:border-gray-700" />
+          <Modal.Body>
+            <div className="space-y-4">
+              <h3 className="text-xl font-medium text-gray-900 dark:text-white">
+                Edit Class
+              </h3>
 
-            <div>
-              <Label htmlFor="start-time" value="Start Time" />
-              <TextInput
-                id="start-time"
-                type="time"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                required
-              />
-            </div>
+              <div>
+                <Label htmlFor="edit_class_date" value="Class Date" />
+                <TextInput
+                  id="edit_class_date"
+                  type="date"
+                  required
+                  value={classDate}
+                  onChange={(e) => setClassDate(e.target.value)}
+                  className="w-full rounded-lg"
+                />
+              </div>
 
-            <div>
-              <Label htmlFor="end-time" value="End Time" />
-              <TextInput
-                id="end-time"
-                type="time"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                required
-              />
-            </div>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="edit_start_time" value="Start Time" />
+                  <TextInput
+                    id="edit_start_time"
+                    type="time"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    className="w-full rounded-lg"
+                  />
+                </div>
+              </div>
 
-            <div>
-              <Label htmlFor="student" value="Student" />
-              <Select
-                id="student"
-                value={selectedStudent}
-                onChange={(e) => setSelectedStudent(e.target.value)}
-                required
-              >
-                {students.map((student) => (
-                  <option key={student.id} value={student.id}>
-                    {student.first_name} {student.last_name}
-                  </option>
-                ))}
-              </Select>
-            </div>
+              <div>
+                <Label htmlFor="edit_student" value="Student" />
+                <Select
+                  id="edit_student"
+                  required
+                  value={selectedStudent}
+                  onChange={(e) => setSelectedStudent(e.target.value)}
+                  className="w-full rounded-lg"
+                >
+                  <option value="">Select Student</option>
+                  {students
+                    ?.sort((a, b) =>
+                      `${a.first_name} ${a.last_name}`.localeCompare(
+                        `${b.first_name} ${b.last_name}`,
+                      ),
+                    )
+                    .map((student) => (
+                      <option key={student.id} value={student.id}>
+                        {student.first_name} {student.last_name}
+                      </option>
+                    ))}
+                </Select>
+              </div>
 
-            <div>
-              <Label htmlFor="teacher" value="Teacher" />
-              <Select
-                id="teacher"
-                value={selectedTeacher}
-                onChange={(e) => setSelectedTeacher(e.target.value)}
-                required
-              >
-                {teachers.map((teacher) => (
-                  <option key={teacher.id} value={teacher.id}>
-                    {teacher.first_name} {teacher.last_name}
-                  </option>
-                ))}
-              </Select>
-            </div>
+              <div>
+                <Label htmlFor="edit_teacher" value="Teacher" />
+                <Select
+                  id="edit_teacher"
+                  required
+                  value={selectedTeacher}
+                  onChange={(e) => setSelectedTeacher(e.target.value)}
+                  className="w-full rounded-lg"
+                >
+                  <option value="">Select Teacher</option>
+                  {teachers
+                    .sort((a, b) =>
+                      `${a.first_name} ${a.last_name}`.localeCompare(
+                        `${b.first_name} ${b.last_name}`,
+                      ),
+                    )
+                    .map((teacher) => (
+                      <option key={teacher.id} value={teacher.id}>
+                        {teacher.first_name} {teacher.last_name}
+                      </option>
+                    ))}
+                </Select>
+              </div>
 
-            <div>
-              <Label htmlFor="class-type" value="Class Type" />
-              <Select
-                id="class-type"
-                value={selectedClassType}
-                onChange={(e) => setSelectedClassType(e.target.value)}
-                required
-              >
-                {classTypes
-                  .filter((type) => VALID_CLASS_TYPE_IDS.includes(type.id))
-                  .map((type) => (
-                    <option key={type.id} value={type.id}>
-                      {type.name}
+              <div>
+                <Label htmlFor="edit_classType" value="Class Type" />
+                <Select
+                  id="edit_classType"
+                  required
+                  value={selectedClassType}
+                  onChange={(e) => setSelectedClassType(e.target.value)}
+                  className="w-full rounded-lg"
+                >
+                  <option value="">Select Class Type</option>
+                  {classTypes
+                    .filter((classType) =>
+                      VALID_CLASS_TYPE_IDS.includes(classType.id),
+                    )
+                    .map((classType) => (
+                      <option key={classType.id} value={classType.id}>
+                        {classType.name}
+                      </option>
+                    ))}
+                </Select>
+              </div>
+
+              <div>
+                <Label
+                  htmlFor="edit_class_status"
+                  value="Class Status (Optional)"
+                />
+                <Select
+                  id="edit_class_status"
+                  value={classStatus}
+                  onChange={(e) => setClassStatus(e.target.value)}
+                  className="w-full rounded-lg"
+                >
+                  {filteredClassStatusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
                     </option>
                   ))}
-              </Select>
-            </div>
+                </Select>
+              </div>
 
-            <div>
-              <Label htmlFor="class-status" value="Class Status (Optional)" />
-              <Select
-                id="class-status"
-                value={classStatus}
-                onChange={(e) => setClassStatus(e.target.value)}
-              >
-                {filteredClassStatusOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
+              <div className="flex flex-col gap-2 pt-4 xs:flex-row">
+                <Button
+                  className="w-full xs:w-auto"
+                  gradientDuoTone="purpleToBlue"
+                  onClick={updateLesson}
+                >
+                  Update Class
+                </Button>
+                <Button
+                  className="w-full xs:w-auto"
+                  color="gray"
+                  onClick={() => setOpenEditModal(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
+          </Modal.Body>
+        </Modal>
+      )}
+      {/* Edit Calendar Event Modal */}
+      {permissions.update && (
+        <Modal
+          show={openEditCalendarModal}
+          size="md"
+          onClose={() => setOpenEditCalendarModal(false)}
+          popup
+          className="responsive-modal"
+        >
+          <Modal.Header className="border-b border-gray-200 dark:border-gray-700" />
+          <Modal.Body>
+            <div className="space-y-4">
+              <h3 className="text-xl font-medium text-gray-900 dark:text-white">
+                Edit Calendar Event
+              </h3>
 
-            <div className="flex justify-end gap-4">
-              <Button onClick={updateLesson}>Update Class</Button>
-              <Button color="gray" onClick={() => setOpenEditModal(false)}>
-                Cancel
-              </Button>
+              <div>
+                <Label htmlFor="edit_calendar_date" value="Event Date" />
+                <TextInput
+                  id="edit_calendar_date"
+                  type="date"
+                  required
+                  value={classDate}
+                  onChange={(e) => setClassDate(e.target.value)}
+                  className="w-full rounded-lg"
+                />
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <Label
+                    htmlFor="edit_calendar_start_time"
+                    value="Start Time"
+                  />
+                  <TextInput
+                    id="edit_calendar_start_time"
+                    type="time"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    className="w-full rounded-lg"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit_calendar_end_time" value="End Time" />
+                  <TextInput
+                    id="edit_calendar_end_time"
+                    type="time"
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
+                    className="w-full rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="edit_calendar_student" value="Student" />
+                <Select
+                  id="edit_calendar_student"
+                  value={selectedStudent}
+                  onChange={(e) => setSelectedStudent(e.target.value)}
+                  className="w-full rounded-lg"
+                >
+                  <option value="">Select Student</option>
+                  {students
+                    ?.sort((a, b) =>
+                      `${a.first_name} ${a.last_name}`.localeCompare(
+                        `${b.first_name} ${b.last_name}`,
+                      ),
+                    )
+                    .map((student) => (
+                      <option key={student.id} value={student.id}>
+                        {student.first_name} {student.last_name}
+                      </option>
+                    ))}
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="edit_calendar_teacher" value="Teacher" />
+                <Select
+                  id="edit_calendar_teacher"
+                  value={selectedTeacher}
+                  onChange={(e) => setSelectedTeacher(e.target.value)}
+                  className="w-full rounded-lg"
+                >
+                  <option value="">Select Teacher</option>
+                  {teachers
+                    .sort((a, b) =>
+                      `${a.first_name} ${a.last_name}`.localeCompare(
+                        `${b.first_name} ${b.last_name}`,
+                      ),
+                    )
+                    .map((teacher) => (
+                      <option key={teacher.id} value={teacher.id}>
+                        {teacher.first_name} {teacher.last_name}
+                      </option>
+                    ))}
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="edit_calendar_classType" value="Class Type" />
+                <Select
+                  id="edit_calendar_classType"
+                  value={selectedClassType}
+                  onChange={(e) => setSelectedClassType(e.target.value)}
+                  className="w-full rounded-lg"
+                >
+                  <option value="">Select Class Type</option>
+                  {classTypes
+                    .filter((classType) =>
+                      VALID_CLASS_TYPE_IDS.includes(classType.id),
+                    )
+                    .map((classType) => (
+                      <option key={classType.id} value={classType.id}>
+                        {classType.name}
+                      </option>
+                    ))}
+                </Select>
+              </div>
+
+              <div>
+                <Label
+                  htmlFor="edit_calendar_class_status"
+                  value="Class Status (Optional)"
+                />
+                <Select
+                  id="edit_calendar_class_status"
+                  value={classStatus}
+                  onChange={(e) => setClassStatus(e.target.value)}
+                  className="w-full rounded-lg"
+                >
+                  {filteredClassStatusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+
+              <div className="flex flex-col gap-2 pt-4 xs:flex-row">
+                <Button
+                  className="w-full xs:w-auto"
+                  gradientDuoTone="purpleToBlue"
+                  onClick={updateCalendarEvent}
+                >
+                  Update Event
+                </Button>
+                <Button
+                  className="w-full xs:w-auto"
+                  color="gray"
+                  onClick={() => setOpenEditCalendarModal(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
-          </div>
-        </Modal.Body>
-      </Modal>
+          </Modal.Body>
+        </Modal>
+      )}
     </motion.div>
   );
 };
