@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { useTimezone } from '../contexts/TimezoneContext';
-import { ClockCircleOutlined } from '@ant-design/icons';
-import dayjs from 'dayjs';
-import timezone from 'dayjs/plugin/timezone';
-import utc from 'dayjs/plugin/utc';
-import { Select } from 'antd';
+import React, { useState, useEffect } from "react";
+import { useTimezone } from "../contexts/TimezoneContext";
+import { ClockCircleOutlined } from "@ant-design/icons";
+import dayjs from "dayjs";
+import timezone from "dayjs/plugin/timezone";
+import utc from "dayjs/plugin/utc";
+import { Select } from "antd";
 
 // Initialize dayjs plugins
 dayjs.extend(utc);
@@ -12,58 +12,52 @@ dayjs.extend(timezone);
 
 // Common timezone options
 const COMMON_TIMEZONES = [
-  'America/Los_Angeles',
-  'America/New_York',
-  'Europe/London',
-  'Europe/Istanbul',
-  'Asia/Tokyo',
-  'Asia/Jakarta',
-  'Australia/Sydney',
-  'Pacific/Auckland'
+  "America/Los_Angeles",
+  "America/New_York",
+  "Europe/London",
+  "Europe/Istanbul",
+  "Asia/Tokyo",
+  "Asia/Jakarta",
+  "Australia/Sydney",
+  "Pacific/Auckland",
 ];
 
 interface TimezoneDisplayProps {
   compact?: boolean;
 }
 
-const TimezoneDisplay: React.FC<TimezoneDisplayProps> = ({ compact = false }) => {
+const TimezoneDisplay: React.FC<TimezoneDisplayProps> = ({
+  compact = false,
+}) => {
   const { timezone, setTimezone } = useTimezone();
-  const [currentTime, setCurrentTime] = useState<dayjs.Dayjs>(dayjs().tz(timezone));
-  
+  const [currentTime, setCurrentTime] = useState<dayjs.Dayjs>(
+    dayjs().tz(timezone),
+  );
+
   // Update time every second instead of every minute
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentTime(dayjs().tz(timezone));
     }, 1000);
-    
+
     return () => clearInterval(interval);
   }, [timezone]);
-  
+
   // Get current time formatted in user's timezone
-  const timeString = currentTime.format('HH:mm:ss');
-  
+  const timeString = currentTime.format("HH:mm:ss");
+
   const handleTimezoneChange = (value: string) => {
     setTimezone(value);
-    
-    // ✅ INSTANT FIX: Calendar page gets immediate refresh to prevent any layout issues
+
     console.log("🌍 Timezone changed to:", value);
-    
-    // Check if we're on the calendar page
-    const isCalendarPage = window.location.pathname.includes('/calendar');
-    
-    if (isCalendarPage) {
-      console.log("🔄 Calendar page - INSTANT REFRESH");
-      // No delay, no toast - just immediate refresh
-      window.location.reload();
-    } else {
-      // For other pages, just dispatch the custom event
-      const event = new CustomEvent('timezoneChanged', { 
-        detail: { timezone: value } 
-      });
-      window.dispatchEvent(event);
-    }
+
+    // Send custom event to update all components
+    const event = new CustomEvent("timezoneChanged", {
+      detail: { timezone: value },
+    });
+    window.dispatchEvent(event);
   };
-  
+
   if (compact) {
     // Compact version for small spaces
     return (
@@ -73,7 +67,7 @@ const TimezoneDisplay: React.FC<TimezoneDisplayProps> = ({ compact = false }) =>
       </div>
     );
   }
-  
+
   // Full version with timezone selector
   return (
     <div className="flex items-center space-x-2 text-white">
@@ -86,9 +80,9 @@ const TimezoneDisplay: React.FC<TimezoneDisplayProps> = ({ compact = false }) =>
         style={{ width: 180 }}
         value={timezone}
         onChange={handleTimezoneChange}
-        options={COMMON_TIMEZONES.map(tz => ({ 
-          value: tz, 
-          label: tz.replace(/_/g, ' ') 
+        options={COMMON_TIMEZONES.map((tz) => ({
+          value: tz,
+          label: tz.replace(/_/g, " "),
         }))}
         showSearch
         placeholder="Select timezone"
@@ -98,4 +92,4 @@ const TimezoneDisplay: React.FC<TimezoneDisplayProps> = ({ compact = false }) =>
   );
 };
 
-export default TimezoneDisplay; 
+export default TimezoneDisplay;

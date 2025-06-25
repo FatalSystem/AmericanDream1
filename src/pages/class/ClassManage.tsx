@@ -170,7 +170,9 @@ const ClassManage: React.FC = () => {
 
   const fetchClasses = async () => {
     try {
+      console.log("🔄 Fetching classes data...", { timezone });
       setLoading(true);
+
       const [
         lessonsRes,
         studentsRes,
@@ -184,6 +186,12 @@ const ClassManage: React.FC = () => {
         api.get("/class-types"),
         api.get("/calendar/events"), // Додаємо запит календарних подій
       ]);
+
+      console.log("📊 Fetched data:", {
+        lessonsCount: lessonsRes.data?.length || 0,
+        calendarEventsCount: calendarEventsRes.data?.length || 0,
+        timezone,
+      });
 
       // Debug the API response for lessons
       const lessonsData = lessonsRes.data || [];
@@ -663,6 +671,41 @@ const ClassManage: React.FC = () => {
   };
 
   const openEditLesson = (lesson: Lesson) => {
+    console.log("🔍 Opening edit lesson:", {
+      lesson,
+      lessonStudent: lesson.Student,
+      lessonTeacher: lesson.Teacher,
+      studentsCount: students.length,
+      teachersCount: teachers.length,
+    });
+
+    // Перевіряємо чи завантажені дані студентів та вчителів
+    if (
+      students.length === 0 ||
+      teachers.length === 0 ||
+      classTypes.length === 0
+    ) {
+      console.log("⏳ Data not loaded yet, waiting...");
+      // Чекаємо трохи і спробуємо знову
+      setTimeout(() => {
+        if (
+          students.length > 0 &&
+          teachers.length > 0 &&
+          classTypes.length > 0
+        ) {
+          openEditLesson(lesson);
+        } else {
+          console.error(
+            "❌ Failed to load students, teachers or class types data",
+          );
+          toast.error("Failed to load data. Please try again.", {
+            theme: "dark",
+          });
+        }
+      }, 500);
+      return;
+    }
+
     setSelectedLesson(lesson);
     setClassDate(lesson.lesson_date);
     setSelectedStudent(lesson.Student.id.toString());
@@ -670,6 +713,30 @@ const ClassManage: React.FC = () => {
     setSelectedClassType(lesson.class_type.id.toString());
     setPayState(lesson.pay_state);
     setClassStatus(lesson.class_status || "");
+
+    console.log("🔍 Set values:", {
+      selectedStudent: lesson.Student.id.toString(),
+      selectedTeacher: lesson.Teacher.id.toString(),
+      selectedClassType: lesson.class_type.id.toString(),
+    });
+
+    // Перевіряємо чи знайдені студент та вчитель в масивах
+    const foundStudent = students.find((s) => s.id === lesson.Student.id);
+    const foundTeacher = teachers.find((t) => t.id === lesson.Teacher.id);
+
+    console.log("🔍 Found in arrays:", {
+      foundStudent,
+      foundTeacher,
+      selectedStudentId: lesson.Student.id,
+      selectedTeacherId: lesson.Teacher.id,
+    });
+
+    if (!foundStudent) {
+      console.warn("⚠️ Student not found in students array:", lesson.Student);
+    }
+    if (!foundTeacher) {
+      console.warn("⚠️ Teacher not found in teachers array:", lesson.Teacher);
+    }
 
     try {
       // Get start time and convert from DB timezone to user timezone
@@ -1186,7 +1253,11 @@ const ClassManage: React.FC = () => {
 
   // Функції для роботи з календарними подіями
   const openEditCalendarEvent = (event: CalendarEvent) => {
-    console.log("Opening calendar event for edit:", event);
+    console.log("[DEBUG] openEditCalendarEvent called with:", event);
+    console.log("[DEBUG] students:", students);
+    console.log("[DEBUG] teachers:", teachers);
+    console.log("[DEBUG] classTypes:", classTypes);
+
     setSelectedCalendarEvent(event);
 
     // Конвертуємо дату та час календарної події
@@ -1205,38 +1276,238 @@ const ClassManage: React.FC = () => {
       }
     }
 
-    // Встановлюємо студента
+    // *** ВИПРАВЛЕННЯ: Правильне встановлення студента ***
+    let studentId = "";
+    let foundStudent = null;
+
+    console.log("[DEBUG] Looking for student:", {
+      student_id: event.student_id,
+      student_name: (event as any).student_name,
+      student_name_text: event.student_name_text,
+      name: event.name,
+    });
+
+    // 1. Спочатку перевіряємо event.student_id
     if (event.student_id) {
-      setSelectedStudent(event.student_id.toString());
-    } else {
-      setSelectedStudent("");
+      foundStudent = students.find((s) => s.id === event.student_id);
+      if (foundStudent) {
+        studentId = event.student_id.toString();
+        console.log("[DEBUG] Found student by student_id:", foundStudent);
+      }
     }
 
-    // Встановлюємо вчителя
+    // 2. Якщо не знайшли, перевіряємо event.student_name (це поле з вашого логу)
+    if (!foundStudent && (event as any).student_name) {
+      // student_name може бути ID або ім'ям
+      const studentNameValue = (event as any).student_name;
+
+      // Спочатку спробуємо як ID
+      if (!isNaN(parseInt(studentNameValue))) {
+        const studentIdFromName = parseInt(studentNameValue);
+        foundStudent = students.find((s) => s.id === studentIdFromName);
+        if (foundStudent) {
+          studentId = foundStudent.id.toString();
+          console.log(
+            "[DEBUG] Found student by student_name as ID:",
+            foundStudent,
+          );
+        }
+      }
+
+      // Якщо не знайшли як ID, спробуємо як ім'я
+      if (!foundStudent) {
+        foundStudent = students.find(
+          (s) =>
+            `${s.first_name} ${s.last_name}`.toLowerCase() ===
+            studentNameValue.toLowerCase(),
+        );
+        if (foundStudent) {
+          studentId = foundStudent.id.toString();
+          console.log(
+            "[DEBUG] Found student by student_name as name:",
+            foundStudent,
+          );
+        }
+      }
+    }
+
+    // 3. Якщо не знайшли, перевіряємо student_name_text
+    if (!foundStudent && event.student_name_text) {
+      foundStudent = students.find(
+        (s) =>
+          `${s.first_name} ${s.last_name}`.toLowerCase() ===
+          event.student_name_text.toLowerCase(),
+      );
+      if (foundStudent) {
+        studentId = foundStudent.id.toString();
+        console.log(
+          "[DEBUG] Found student by student_name_text:",
+          foundStudent,
+        );
+      }
+    }
+
+    // 4. Якщо не знайшли, перевіряємо name
+    if (!foundStudent && event.name) {
+      foundStudent = students.find(
+        (s) =>
+          `${s.first_name} ${s.last_name}`.toLowerCase() ===
+          event.name.toLowerCase(),
+      );
+      if (foundStudent) {
+        studentId = foundStudent.id.toString();
+        console.log("[DEBUG] Found student by name:", foundStudent);
+      }
+    }
+
+    console.log("[DEBUG] Final student result:", { studentId, foundStudent });
+    setSelectedStudent(studentId);
+
+    // *** ВИПРАВЛЕННЯ: Правильне встановлення вчителя ***
+    let teacherId = "";
+    let foundTeacher = null;
+
+    console.log("[DEBUG] Looking for teacher:", {
+      teacher_id: event.teacher_id,
+      resourceId: (event as any).resourceId,
+      teacher_name: event.teacher_name,
+    });
+
+    // 1. Спочатку перевіряємо event.teacher_id
     if (event.teacher_id) {
-      setSelectedTeacher(event.teacher_id.toString());
-    } else {
-      setSelectedTeacher("");
+      foundTeacher = teachers.find((t) => t.id === event.teacher_id);
+      if (foundTeacher) {
+        teacherId = event.teacher_id.toString();
+        console.log("[DEBUG] Found teacher by teacher_id:", foundTeacher);
+      }
     }
 
-    // Встановлюємо тип класу - конвертуємо з calendar формату в lesson формат
-    const classTypeMapping: { [key: string]: string } = {
-      trial: "1",
-      regular: "2",
-      training: "3",
-      instant: "2",
-      group: "2",
+    // 2. Якщо не знайшли, перевіряємо resourceId (це головне поле для вчителя в календарі)
+    if (!foundTeacher && (event as any).resourceId) {
+      const resourceIdValue = (event as any).resourceId;
+      const resourceIdNum = parseInt(String(resourceIdValue));
+
+      foundTeacher = teachers.find((t) => t.id === resourceIdNum);
+      if (foundTeacher) {
+        teacherId = foundTeacher.id.toString();
+        console.log(
+          "[DEBUG] Found teacher by resourceId:",
+          foundTeacher,
+          "resourceId:",
+          resourceIdNum,
+        );
+      }
+    }
+
+    // 3. Якщо не знайшли, перевіряємо teacher_name
+    if (!foundTeacher && event.teacher_name) {
+      foundTeacher = teachers.find(
+        (t) =>
+          `${t.first_name} ${t.last_name}`.toLowerCase() ===
+          event.teacher_name.toLowerCase(),
+      );
+      if (foundTeacher) {
+        teacherId = foundTeacher.id.toString();
+        console.log("[DEBUG] Found teacher by teacher_name:", foundTeacher);
+      }
+    }
+
+    console.log("[DEBUG] Final teacher result:", { teacherId, foundTeacher });
+    setSelectedTeacher(teacherId);
+
+    // *** ВИПРАВЛЕННЯ: Правильне встановлення типу класу ***
+    let classTypeId = "";
+    let foundClassType = null;
+
+    console.log("[DEBUG] Looking for class type:", {
+      class_type: event.class_type,
+      available_class_types: classTypes.map((ct) => ({
+        id: ct.id,
+        name: ct.name,
+      })),
+    });
+
+    // Створюємо мапінг з calendar формату в lesson формат
+    const calendarToLessonMapping: { [key: string]: string } = {
+      trial: "1", // Trial-Lesson
+      "trial-lesson": "1",
+      "trial lesson": "1",
+      regular: "2", // Regular-Lesson
+      "regular-lesson": "2",
+      "regular lesson": "2",
+      training: "3", // Training
+      "training-lesson": "3",
+      "training lesson": "3",
+      instant: "2", // Instant -> Regular
+      group: "2", // Group -> Regular
     };
 
-    const mappedClassType =
-      classTypeMapping[event.class_type?.toLowerCase()] || "";
-    setSelectedClassType(mappedClassType);
+    if (event.class_type) {
+      const eventClassType = event.class_type.toLowerCase().trim();
+      classTypeId = calendarToLessonMapping[eventClassType] || "";
+
+      console.log("[DEBUG] Class type mapping attempt:", {
+        originalClassType: event.class_type,
+        normalizedClassType: eventClassType,
+        mappedClassTypeId: classTypeId,
+        availableMappings: Object.keys(calendarToLessonMapping),
+      });
+
+      // Перевіряємо чи знайшли в мапінгу
+      if (classTypeId) {
+        foundClassType = classTypes.find(
+          (ct) => ct.id === parseInt(classTypeId),
+        );
+        if (foundClassType) {
+          console.log("[DEBUG] Found class type by mapping:", foundClassType);
+        }
+      }
+
+      // Якщо не знайшли в мапінгу, спробуємо знайти напряму по назві
+      if (!foundClassType) {
+        foundClassType = classTypes.find((ct) => {
+          const ctName = ct.name.toLowerCase().trim();
+          return (
+            ctName === eventClassType ||
+            ctName.includes(eventClassType) ||
+            eventClassType.includes(ctName) ||
+            ctName.replace("-", " ") === eventClassType ||
+            ctName.replace(" ", "-") === eventClassType
+          );
+        });
+
+        if (
+          foundClassType &&
+          VALID_CLASS_TYPE_IDS.includes(foundClassType.id)
+        ) {
+          classTypeId = foundClassType.id.toString();
+          console.log(
+            "[DEBUG] Found class type by name search:",
+            foundClassType,
+          );
+        }
+      }
+    }
+
+    console.log("[DEBUG] Final class type result:", {
+      classTypeId,
+      foundClassType,
+    });
+    setSelectedClassType(classTypeId);
 
     // Встановлюємо статус
     setClassStatus(event.class_status || "");
 
     // Встановлюємо payment status як payState
     setPayState(event.payment_status === "paid");
+
+    console.log("[DEBUG] Opening edit modal with final values:", {
+      studentId,
+      teacherId,
+      classTypeId,
+      classStatus: event.class_status || "",
+      payState: event.payment_status === "paid",
+    });
 
     setOpenEditCalendarModal(true);
   };
@@ -1374,6 +1645,30 @@ const ClassManage: React.FC = () => {
     calendarEvents: tableData.filter((item) => item.source === "calendar")
       .length,
   });
+
+  // Add effect to log values when edit modal opens
+  useEffect(() => {
+    if (openEditModal) {
+      console.log("🔍 Edit modal opened with values:", {
+        selectedStudent,
+        selectedTeacher,
+        selectedClassType,
+        studentsCount: students.length,
+        teachersCount: teachers.length,
+        classTypesCount: classTypes.length,
+      });
+    }
+  }, [
+    openEditModal,
+    selectedStudent,
+    selectedTeacher,
+    selectedClassType,
+    students.length,
+    teachers.length,
+    classTypes.length,
+  ]);
+
+  // Add effect to save local changes to localStorage
 
   if (loading_1) {
     return <LoadingSpinner></LoadingSpinner>;
@@ -1682,17 +1977,23 @@ const ClassManage: React.FC = () => {
                   className="w-full rounded-lg"
                 >
                   <option value="">Select Student</option>
-                  {students
-                    ?.sort((a, b) =>
-                      `${a.first_name} ${a.last_name}`.localeCompare(
-                        `${b.first_name} ${b.last_name}`,
-                      ),
-                    )
-                    .map((student) => (
-                      <option key={student.id} value={student.id}>
-                        {student.first_name} {student.last_name}
-                      </option>
-                    ))}
+                  {students.length === 0 ? (
+                    <option value="" disabled>
+                      Loading students...
+                    </option>
+                  ) : (
+                    students
+                      ?.sort((a, b) =>
+                        `${a.first_name} ${a.last_name}`.localeCompare(
+                          `${b.first_name} ${b.last_name}`,
+                        ),
+                      )
+                      .map((student) => (
+                        <option key={student.id} value={student.id}>
+                          {student.first_name} {student.last_name}
+                        </option>
+                      ))
+                  )}
                 </Select>
               </div>
 
@@ -1706,17 +2007,23 @@ const ClassManage: React.FC = () => {
                   className="w-full rounded-lg"
                 >
                   <option value="">Select Teacher</option>
-                  {teachers
-                    .sort((a, b) =>
-                      `${a.first_name} ${a.last_name}`.localeCompare(
-                        `${b.first_name} ${b.last_name}`,
-                      ),
-                    )
-                    .map((teacher) => (
-                      <option key={teacher.id} value={teacher.id}>
-                        {teacher.first_name} {teacher.last_name}
-                      </option>
-                    ))}
+                  {teachers.length === 0 ? (
+                    <option value="" disabled>
+                      Loading teachers...
+                    </option>
+                  ) : (
+                    teachers
+                      .sort((a, b) =>
+                        `${a.first_name} ${a.last_name}`.localeCompare(
+                          `${b.first_name} ${b.last_name}`,
+                        ),
+                      )
+                      .map((teacher) => (
+                        <option key={teacher.id} value={teacher.id}>
+                          {teacher.first_name} {teacher.last_name}
+                        </option>
+                      ))
+                  )}
                 </Select>
               </div>
 
@@ -1730,15 +2037,21 @@ const ClassManage: React.FC = () => {
                   className="w-full rounded-lg"
                 >
                   <option value="">Select Class Type</option>
-                  {classTypes
-                    .filter((classType) =>
-                      VALID_CLASS_TYPE_IDS.includes(classType.id),
-                    )
-                    .map((classType) => (
-                      <option key={classType.id} value={classType.id}>
-                        {classType.name}
-                      </option>
-                    ))}
+                  {classTypes.length === 0 ? (
+                    <option value="" disabled>
+                      Loading class types...
+                    </option>
+                  ) : (
+                    classTypes
+                      .filter((classType) =>
+                        VALID_CLASS_TYPE_IDS.includes(classType.id),
+                      )
+                      .map((classType) => (
+                        <option key={classType.id} value={classType.id}>
+                          {classType.name}
+                        </option>
+                      ))
+                  )}
                 </Select>
               </div>
 

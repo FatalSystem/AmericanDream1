@@ -453,9 +453,15 @@ const Calendar: React.FC = () => {
     const view = calendarApi.view;
 
     try {
-      console.log("Fetching calendar events...");
+      console.log("🔄 Fetching calendar events...", {
+        timezone,
+        selectedTeacherIds,
+        viewStart: view.activeStart,
+        viewEnd: view.activeEnd,
+      });
 
       if (teachers.length === 0) {
+        console.log("⏳ Teachers not loaded yet, retrying in 100ms...");
         setTimeout(() => fetchEvents(), 100);
         return;
       }
@@ -633,17 +639,22 @@ const Calendar: React.FC = () => {
         let tzStart, tzEnd;
 
         try {
-          // Парсимо час без додаткової конвертації часових зон
-          tzStart = dayjs(event.startDate);
-          tzEnd = event.endDate
-            ? dayjs(event.endDate)
-            : tzStart.add(50, "minute");
+          // Правильна конвертація часу з UTC в часовий пояс користувача
+          const utcStart = dayjs.utc(event.startDate);
+          const utcEnd = event.endDate
+            ? dayjs.utc(event.endDate)
+            : utcStart.add(50, "minute");
+
+          tzStart = utcStart.tz(timezone);
+          tzEnd = utcEnd.tz(timezone);
 
           console.log("🕐 Time parsing for event:", event.id, {
             originalStartDate: event.startDate,
             originalEndDate: event.endDate,
-            parsedStart: tzStart.format("YYYY-MM-DD HH:mm:ss"),
-            parsedEnd: tzEnd.format("YYYY-MM-DD HH:mm:ss"),
+            utcStart: utcStart.format("YYYY-MM-DD HH:mm:ss"),
+            utcEnd: utcEnd.format("YYYY-MM-DD HH:mm:ss"),
+            tzStart: tzStart.format("YYYY-MM-DD HH:mm:ss"),
+            tzEnd: tzEnd.format("YYYY-MM-DD HH:mm:ss"),
             userTimezone: timezone,
           });
         } catch (error) {
@@ -727,35 +738,72 @@ const Calendar: React.FC = () => {
 
       // *** ВИПРАВЛЕННЯ: Зберігаємо локальні зміни unavailable подій ***
       setEvents((currentEvents) => {
+        // Завантажуємо локальні зміни з localStorage
+        const savedChanges = localStorage.getItem(
+          "calendarUnavailableLocalChanges",
+        );
+        let localChanges = {};
+        if (savedChanges) {
+          try {
+            localChanges = JSON.parse(savedChanges);
+          } catch (error) {
+            console.error("Error parsing saved changes:", error);
+          }
+        }
+
         const updatedEvents = events.map((newEvent) => {
           // Шукаємо відповідну подію в поточному стані
           const existingEvent = currentEvents.find((e) => e.id === newEvent.id);
 
-          // Якщо це unavailable подія і вона існує в поточному стані
-          if (newEvent.extendedProps?.isNotAvailable && existingEvent) {
-            // Перевіряємо, чи є локальні зміни
-            const hasLocalChanges =
-              existingEvent.start !== newEvent.start ||
-              existingEvent.end !== newEvent.end;
-
-            if (hasLocalChanges) {
+          // Якщо це unavailable подія
+          if (newEvent.extendedProps?.isNotAvailable) {
+            // Перевіряємо чи є локальні зміни в localStorage
+            if (localChanges[newEvent.id]) {
+              const change = localChanges[newEvent.id];
               console.log(
-                "🔄 Preserving local changes for unavailable event:",
+                "🔄 Applying saved local change for unavailable event:",
                 {
                   id: newEvent.id,
-                  localStart: existingEvent.start,
-                  localEnd: existingEvent.end,
+                  savedStart: change.start,
+                  savedEnd: change.end,
                   serverStart: newEvent.start,
                   serverEnd: newEvent.end,
                 },
               );
 
-              // Повертаємо локальну версію з серверними даними
+              // Застосовуємо збережені локальні зміни
               return {
                 ...newEvent,
-                start: existingEvent.start,
-                end: existingEvent.end,
+                start: change.start,
+                end: change.end,
               };
+            }
+
+            // Якщо є локальні зміни в поточному стані
+            if (existingEvent) {
+              const hasLocalChanges =
+                existingEvent.start !== newEvent.start ||
+                existingEvent.end !== newEvent.end;
+
+              if (hasLocalChanges) {
+                console.log(
+                  "🔄 Preserving current local changes for unavailable event:",
+                  {
+                    id: newEvent.id,
+                    localStart: existingEvent.start,
+                    localEnd: existingEvent.end,
+                    serverStart: newEvent.start,
+                    serverEnd: newEvent.end,
+                  },
+                );
+
+                // Повертаємо локальну версію з серверними даними
+                return {
+                  ...newEvent,
+                  start: existingEvent.start,
+                  end: existingEvent.end,
+                };
+              }
             }
           }
 
@@ -766,37 +814,74 @@ const Calendar: React.FC = () => {
       });
 
       setDisplayedEvents((currentDisplayedEvents) => {
+        // Завантажуємо локальні зміни з localStorage
+        const savedChanges = localStorage.getItem(
+          "calendarUnavailableLocalChanges",
+        );
+        let localChanges = {};
+        if (savedChanges) {
+          try {
+            localChanges = JSON.parse(savedChanges);
+          } catch (error) {
+            console.error("Error parsing saved changes:", error);
+          }
+        }
+
         const updatedDisplayedEvents = events.map((newEvent) => {
           // Шукаємо відповідну подію в поточному стані
           const existingEvent = currentDisplayedEvents.find(
             (e) => e.id === newEvent.id,
           );
 
-          // Якщо це unavailable подія і вона існує в поточному стані
-          if (newEvent.extendedProps?.isNotAvailable && existingEvent) {
-            // Перевіряємо, чи є локальні зміни
-            const hasLocalChanges =
-              existingEvent.start !== newEvent.start ||
-              existingEvent.end !== newEvent.end;
-
-            if (hasLocalChanges) {
+          // Якщо це unavailable подія
+          if (newEvent.extendedProps?.isNotAvailable) {
+            // Перевіряємо чи є локальні зміни в localStorage
+            if (localChanges[newEvent.id]) {
+              const change = localChanges[newEvent.id];
               console.log(
-                "🔄 Preserving local changes for displayed unavailable event:",
+                "🔄 Applying saved local change for displayed unavailable event:",
                 {
                   id: newEvent.id,
-                  localStart: existingEvent.start,
-                  localEnd: existingEvent.end,
+                  savedStart: change.start,
+                  savedEnd: change.end,
                   serverStart: newEvent.start,
                   serverEnd: newEvent.end,
                 },
               );
 
-              // Повертаємо локальну версію з серверними даними
+              // Застосовуємо збережені локальні зміни
               return {
                 ...newEvent,
-                start: existingEvent.start,
-                end: existingEvent.end,
+                start: change.start,
+                end: change.end,
               };
+            }
+
+            // Якщо є локальні зміни в поточному стані
+            if (existingEvent) {
+              const hasLocalChanges =
+                existingEvent.start !== newEvent.start ||
+                existingEvent.end !== newEvent.end;
+
+              if (hasLocalChanges) {
+                console.log(
+                  "🔄 Preserving current local changes for displayed unavailable event:",
+                  {
+                    id: newEvent.id,
+                    localStart: existingEvent.start,
+                    localEnd: existingEvent.end,
+                    serverStart: newEvent.start,
+                    serverEnd: newEvent.end,
+                  },
+                );
+
+                // Повертаємо локальну версію з серверними даними
+                return {
+                  ...newEvent,
+                  start: existingEvent.start,
+                  end: existingEvent.end,
+                };
+              }
             }
           }
 
@@ -807,8 +892,13 @@ const Calendar: React.FC = () => {
       });
 
       setError(null);
+      console.log("✅ Calendar events fetched successfully", {
+        totalEvents: events.length,
+        displayedEvents: displayedEvents.length,
+        timezone,
+      });
     } catch (err) {
-      console.error("Error fetching events:", err);
+      console.error("❌ Error fetching events:", err);
       setError("Failed to fetch events");
     } finally {
       setLoading(false);
@@ -990,6 +1080,77 @@ const Calendar: React.FC = () => {
     initializeData();
   }, []); // Remove fetchEvents from dependencies
 
+  // Add effect to listen for timezone changes
+  useEffect(() => {
+    const handleTimezoneChange = (event: CustomEvent) => {
+      console.log("🌍 Timezone change detected in calendar:", event.detail);
+
+      // Очищаємо локальні зміни при зміні часового поясу
+      localStorage.removeItem("calendarUnavailableLocalChanges");
+      console.log("🧹 Cleared local changes due to timezone change");
+
+      // Refresh events with new timezone
+      fetchEvents();
+    };
+
+    // Listen for timezone change events
+    window.addEventListener(
+      "timezoneChanged",
+      handleTimezoneChange as EventListener,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "timezoneChanged",
+        handleTimezoneChange as EventListener,
+      );
+    };
+  }, [fetchEvents]); // Add fetchEvents to dependencies
+
+  // Add effect to listen for lesson updates from ClassManage
+  useEffect(() => {
+    const handleLessonUpdate = (event: CustomEvent) => {
+      console.log("📚 Lesson update detected in calendar:", event.detail);
+      // Refresh events when lessons are updated
+      fetchEvents();
+    };
+
+    // Listen for lesson update events
+    window.addEventListener(
+      "lessonUpdated",
+      handleLessonUpdate as EventListener,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "lessonUpdated",
+        handleLessonUpdate as EventListener,
+      );
+    };
+  }, [fetchEvents]); // Add fetchEvents to dependencies
+
+  // Add effect to listen for calendar event updates from ClassManage
+  useEffect(() => {
+    const handleCalendarUpdate = (event: CustomEvent) => {
+      console.log("📅 Calendar event update detected:", event.detail);
+      // Refresh events when calendar events are updated
+      fetchEvents();
+    };
+
+    // Listen for calendar update events
+    window.addEventListener(
+      "calendarUpdated",
+      handleCalendarUpdate as EventListener,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "calendarUpdated",
+        handleCalendarUpdate as EventListener,
+      );
+    };
+  }, [fetchEvents]); // Add fetchEvents to dependencies
+
   // Update events filtering
   useEffect(() => {
     if (selectedTeacherIds.length > 0) {
@@ -1054,6 +1215,15 @@ const Calendar: React.FC = () => {
       console.log(
         "🎯 Calendar component unmounted, teacher selection preserved",
       );
+    };
+  }, []);
+
+  // Очищаємо локальні зміни при розмонтуванні компонента
+  useEffect(() => {
+    return () => {
+      // Очищаємо локальні зміни при виході з календаря
+      localStorage.removeItem("calendarUnavailableLocalChanges");
+      console.log("🧹 Cleared local changes on component unmount");
     };
   }, []);
 
@@ -2099,6 +2269,27 @@ const Calendar: React.FC = () => {
         );
         setEvents((prev) => prev.filter((event) => event.id !== eventId));
 
+        // Очищаємо локальні зміни для видаленої події
+        const savedChanges = localStorage.getItem(
+          "calendarUnavailableLocalChanges",
+        );
+        if (savedChanges) {
+          try {
+            const localChanges = JSON.parse(savedChanges);
+            delete localChanges[eventId];
+            localStorage.setItem(
+              "calendarUnavailableLocalChanges",
+              JSON.stringify(localChanges),
+            );
+            console.log("🧹 Cleared local changes for deleted event:", eventId);
+          } catch (error) {
+            console.error(
+              "Error clearing local changes for deleted event:",
+              error,
+            );
+          }
+        }
+
         // Force FullCalendar to refresh
         if (calendarRef.current) {
           const calendarApi = calendarRef.current.getApi();
@@ -2977,6 +3168,24 @@ const Calendar: React.FC = () => {
           // *** ВИПРАВЛЕННЯ: НЕ викликаємо refetchEvents для unavailable івентів, щоб уникнути зміщення інших івентів ***
           console.log("✅ Unavailable event updated locally without refetch");
 
+          // Очищаємо локальні зміни для цієї події, оскільки вона була збережена на сервері
+          const savedChanges = localStorage.getItem(
+            "calendarUnavailableLocalChanges",
+          );
+          if (savedChanges) {
+            try {
+              const localChanges = JSON.parse(savedChanges);
+              delete localChanges[info.event.id];
+              localStorage.setItem(
+                "calendarUnavailableLocalChanges",
+                JSON.stringify(localChanges),
+              );
+              console.log("🧹 Cleared local changes for event:", info.event.id);
+            } catch (error) {
+              console.error("Error clearing local changes:", error);
+            }
+          }
+
           // *** ВИПРАВЛЕННЯ: Використовуємо setTimeout для синхронізації ***
           setTimeout(async () => {
             console.log("🔄 Syncing events after unavailable update...");
@@ -3075,6 +3284,74 @@ const Calendar: React.FC = () => {
       info.revert(); // Відновлюємо оригінальний стан
     }
   };
+
+  // Add effect to save local changes to localStorage
+  useEffect(() => {
+    if (events.length > 0) {
+      const unavailableEvents = events.filter(
+        (e) => e.extendedProps?.isNotAvailable,
+      );
+      if (unavailableEvents.length > 0) {
+        const localChanges = unavailableEvents.reduce(
+          (acc, event) => {
+            acc[event.id] = {
+              start: event.start,
+              end: event.end,
+              lastModified: Date.now(),
+            };
+            return acc;
+          },
+          {} as Record<string, any>,
+        );
+
+        localStorage.setItem(
+          "calendarUnavailableLocalChanges",
+          JSON.stringify(localChanges),
+        );
+        console.log(
+          "💾 Saved local changes for unavailable events:",
+          localChanges,
+        );
+      }
+    }
+  }, [events]);
+
+  // Add effect to load local changes from localStorage
+  useEffect(() => {
+    const savedChanges = localStorage.getItem(
+      "calendarUnavailableLocalChanges",
+    );
+    if (savedChanges) {
+      try {
+        const localChanges = JSON.parse(savedChanges);
+        console.log(
+          "📂 Loading local changes for unavailable events:",
+          localChanges,
+        );
+
+        setEvents((currentEvents) => {
+          return currentEvents.map((event) => {
+            if (event.extendedProps?.isNotAvailable && localChanges[event.id]) {
+              const change = localChanges[event.id];
+              console.log(
+                "🔄 Applying local change for event:",
+                event.id,
+                change,
+              );
+              return {
+                ...event,
+                start: change.start,
+                end: change.end,
+              };
+            }
+            return event;
+          });
+        });
+      } catch (error) {
+        console.error("Error loading local changes:", error);
+      }
+    }
+  }, []); // Run once on mount
 
   return (
     <div className="calendar-container with-sidebar">
@@ -3363,9 +3640,9 @@ const Calendar: React.FC = () => {
                 options={[
                   { value: "scheduled", label: "Scheduled" },
                   { value: "given", label: "Given" },
-                  { value: "student_no_show", label: "Student No Show" },
-                  { value: "teacher_no_show", label: "Teacher No Show" },
-                  { value: "cancelled", label: "Cancelled" },
+                  { value: "student No Show", label: "Student No Show" },
+                  { value: "teacher No Show", label: "Teacher No Show" },
+                  { value: "сancelled", label: "Cancelled" },
                 ]}
                 style={{ width: "100%" }}
               />
